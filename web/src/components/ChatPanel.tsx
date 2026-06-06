@@ -23,6 +23,8 @@ const PUBLIC_ASSET_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/")
 const defaultAvatarUrl = `${PUBLIC_ASSET_BASE}assets/avatars/lina.svg`;
 const assetPlaceholderBase = `${PUBLIC_ASSET_BASE}assets`;
 const AVATAR_MODE_STORAGE_KEY = "dg-avatar-render-mode";
+const CHAT_STATE_STORAGE_PREFIX = "dg-chat-state-v1";
+const MAX_STORED_MESSAGES = 80;
 
 interface Bubble {
   role: Message["role"];
@@ -74,6 +76,14 @@ interface State {
 const moods = ["neutral", "happy", "sad", "surprise", "wink", "angry", "love"] as const;
 const relationshipModes: Array<"sweet" | "flirty" | "playful" | "mature"> = ["sweet", "flirty", "playful", "mature"];
 type LocalEmotion = (typeof moods)[number];
+
+function isEmotion(value: unknown): value is Emotion {
+  return typeof value === "string" && (moods as readonly string[]).includes(value);
+}
+
+function isRelationshipMode(value: unknown): value is (typeof relationshipModes)[number] {
+  return typeof value === "string" && relationshipModes.includes(value as (typeof relationshipModes)[number]);
+}
 
 const localMoodKeywords: Record<LocalEmotion, string[]> = {
   happy: ["开心", "高兴", "好", "棒", "喜欢", "爱", "甜", "nice", "cool", "great", "好笑", "哈哈", "快乐", "开心死了", "太好了"],
@@ -129,6 +139,130 @@ function parseEmotionProfile(raw: string): EmotionProfile | undefined {
     return Object.keys(result).length > 0 ? result : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function getChatStateStorageKey(sessionId: string, characterId: string): string {
+  const safeSessionId = encodeURIComponent(sessionId || "session-browser");
+  const safeCharacterId = encodeURIComponent(characterId || "lina");
+  return `${CHAT_STATE_STORAGE_PREFIX}:${safeSessionId}:${safeCharacterId}`;
+}
+
+function normalizeStoredMessages(raw: unknown): Bubble[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const role = (item as Partial<Bubble>).role;
+      const content = String((item as Partial<Bubble>).content || "").trim();
+      if (!content || (role !== "user" && role !== "assistant" && role !== "system")) {
+        return [];
+      }
+      return [{ role, content }];
+    })
+    .slice(-MAX_STORED_MESSAGES);
+}
+
+function normalizeStoredContext(raw: unknown): ChatContext | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Partial<ChatContext>;
+  if (
+    value.relationshipAffinity !== "new" &&
+    value.relationshipAffinity !== "warm" &&
+    value.relationshipAffinity !== "close" &&
+    value.relationshipAffinity !== "intimate"
+  ) {
+    return undefined;
+  }
+  if (!isEmotion(value.lastEmotion)) return undefined;
+
+  return {
+    relationshipAffinity: value.relationshipAffinity,
+    activeRelationshipMode: isRelationshipMode(value.activeRelationshipMode) ? value.activeRelationshipMode : undefined,
+    summary: String(value.summary || ""),
+    userSignals: Array.isArray(value.userSignals) ? value.userSignals.map((item) => String(item)).filter(Boolean).slice(-8) : [],
+    lastEmotion: value.lastEmotion,
+    turnCount: typeof value.turnCount === "number" ? value.turnCount : 0,
+    updatedAt: String(value.updatedAt || "")
+  };
+}
+
+function buildDefaultChatState(character: DigitalHuman | undefined, fallbackId: string, welcomeText: string): State {
+  return {
+    messages: [{ role: "assistant", content: welcomeText }],
+    emotion: character?.defaultMood || "neutral",
+    characterId: character?.id || fallbackId || "lina",
+    relationshipMode: character?.relationshipMode || "sweet",
+    context: undefined
+  };
+}
+
+function readStoredChatState(sessionId: string, character: DigitalHuman | undefined, welcomeText: string): State | null {
+  if (typeof window === "undefined" || !character?.id) return null;
+
+  try {
+    const raw = window.localStorage.getItem(getChatStateStorageKey(sessionId, character.id));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<State>;
+    const messages = normalizeStoredMessages(parsed.messages);
+    if (messages.length === 0) return null;
+    const context = normalizeStoredContext(parsed.context);
+    return {
+      messages,
+      emotion: isEmotion(parsed.emotion) ? parsed.emotion : context?.lastEmotion || character.defaultMood || "neutral",
+      characterId: character.id,
+      relationshipMode: isRelationshipMode(parsed.relationshipMode)
+        ? parsed.relationshipMode
+        : context?.activeRelationshipMode || character.relationshipMode || "sweet",
+      context
+    };
+  } catch {
+    return buildDefaultChatState(character, character?.id || "lina", welcomeText);
+  }
+}
+
+function writeStoredChatState(sessionId: string, state: State): void {
+  if (typeof window === "undefined" || !state.characterId) return;
+
+  try {
+    const payload = {
+      version: 1,
+      messages: state.messages.slice(-MAX_STORED_MESSAGES),
+      emotion: state.emotion,
+      relationshipMode: state.relationshipMode,
+      context: state.context,
+      updatedAt: new Date().toISOString()
+    };
+    window.localStorage.setItem(getChatStateStorageKey(sessionId, state.characterId), JSON.stringify(payload));
+  } catch {
+    // Local persistence is best-effort in private or quota-limited browsers.
+  }
+}
+
+function removeStoredChatState(sessionId: string, characterId: string): void {
+  if (typeof window === "undefined" || !characterId) return;
+  try {
+    window.localStorage.removeItem(getChatStateStorageKey(sessionId, characterId));
+  } catch {
+    // Local persistence is best-effort.
+  }
+}
+
+function removeStoredChatStatesForCharacter(characterId: string): void {
+  if (typeof window === "undefined" || !characterId) return;
+  const suffix = `:${encodeURIComponent(characterId)}`;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(`${CHAT_STATE_STORAGE_PREFIX}:`) && key.endsWith(suffix)) {
+        keys.push(key);
+      }
+    }
+    keys.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    // Local persistence is best-effort.
   }
 }
 
@@ -199,12 +333,10 @@ export function ChatPanel({
 }) {
   const welcomeText = "你好呀，来聊聊今天发生了什么吧～";
   const initialCharacter = characters.find((item) => item.id === selectedCharacterId) || characters[0];
-  const [state, setState] = useState<State>({
-    messages: [{ role: "assistant", content: welcomeText }],
-    emotion: initialCharacter?.defaultMood || "neutral",
-    characterId: initialCharacter?.id || selectedCharacterId || "lina",
-    relationshipMode: initialCharacter?.relationshipMode || "sweet"
-  });
+  const [state, setState] = useState<State>(() =>
+    readStoredChatState(sessionId, initialCharacter, welcomeText) ||
+    buildDefaultChatState(initialCharacter, selectedCharacterId || "lina", welcomeText)
+  );
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -241,6 +373,7 @@ export function ChatPanel({
   const modelObjectUrlsRef = useRef<string[]>([]);
   const suppressClickAfterHoldRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const activeChatStorageKeyRef = useRef("");
 
   const activeCharacter = characters.find((item) => item.id === state.characterId) || initialCharacter || characters[0];
   const isCustomCharacter = (characterId: string) => characterId.startsWith("custom-");
@@ -248,21 +381,25 @@ export function ChatPanel({
   useEffect(() => {
     const preferred = characters.find((item) => item.id === selectedCharacterId) || characters[0];
     if (!preferred) return;
+    const nextStorageKey = getChatStateStorageKey(sessionId, preferred.id);
     setState((prev) => {
-      if (prev.characterId === preferred.id) {
+      if (prev.characterId === preferred.id && activeChatStorageKeyRef.current === nextStorageKey) {
         return {
           ...prev,
           relationshipMode: prev.relationshipMode || preferred.relationshipMode || "sweet"
         };
       }
-      return {
-        ...prev,
-        characterId: preferred.id,
-        emotion: preferred.defaultMood || prev.emotion,
-        relationshipMode: preferred.relationshipMode || prev.relationshipMode || "sweet"
-      };
+      activeChatStorageKeyRef.current = nextStorageKey;
+      return readStoredChatState(sessionId, preferred, welcomeText) ||
+        buildDefaultChatState(preferred, preferred.id, welcomeText);
     });
-  }, [selectedCharacterId, characters]);
+  }, [selectedCharacterId, characters, sessionId]);
+
+  useEffect(() => {
+    if (!state.characterId) return;
+    activeChatStorageKeyRef.current = getChatStateStorageKey(sessionId, state.characterId);
+    writeStoredChatState(sessionId, state);
+  }, [sessionId, state.characterId, state.messages, state.emotion, state.relationshipMode, state.context]);
 
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -633,6 +770,9 @@ export function ChatPanel({
     if (isLoading) return;
 
     const currentCharacter = characters.find((item) => item.id === state.characterId) || initialCharacter || null;
+    const resetCharacterId = currentCharacter?.id || state.characterId || selectedCharacterId || "lina";
+    const resetState = buildDefaultChatState(currentCharacter || undefined, resetCharacterId, welcomeText);
+    removeStoredChatState(sessionId, resetCharacterId);
     setIsLoading(true);
     try {
       await clearSessionHistory(sessionId);
@@ -643,13 +783,7 @@ export function ChatPanel({
     onResetSession();
     stopSpeaking();
 
-    setState({
-      messages: [{ role: "assistant", content: welcomeText }],
-      emotion: currentCharacter?.defaultMood || "neutral",
-      characterId: currentCharacter?.id || state.characterId || selectedCharacterId || "lina",
-      relationshipMode: currentCharacter?.relationshipMode || state.relationshipMode || "sweet",
-      context: undefined
-    });
+    setState(resetState);
     setInput("");
     setSpeaking(false);
     setSpeechError("");
@@ -661,12 +795,11 @@ export function ChatPanel({
   const switchCharacter = (nextId: string) => {
     const selected = characters.find((c) => c.id === nextId);
     onCharacterChange(nextId);
-    setState((prev) => ({
-      ...prev,
-      characterId: nextId,
-      emotion: selected?.defaultMood || prev.emotion,
-      relationshipMode: selected?.relationshipMode || prev.relationshipMode || "sweet"
-    }));
+    activeChatStorageKeyRef.current = getChatStateStorageKey(sessionId, nextId);
+    setState(
+      readStoredChatState(sessionId, selected, welcomeText) ||
+      buildDefaultChatState(selected, nextId, welcomeText)
+    );
   };
 
   const removeCharacter = async () => {
@@ -680,11 +813,16 @@ export function ChatPanel({
     setIsLoading(true);
     try {
       await onDelete(currentId);
+      removeStoredChatStatesForCharacter(currentId);
       const remaining = characters.filter((item) => item.id !== currentId);
-      const fallback = remaining[0]?.id || "";
-      if (fallback) {
-        setState((prev) => ({ ...prev, characterId: fallback, emotion: remaining[0]?.defaultMood || prev.emotion }));
-        onCharacterChange(fallback);
+      const fallbackCharacter = remaining[0];
+      if (fallbackCharacter?.id) {
+        activeChatStorageKeyRef.current = getChatStateStorageKey(sessionId, fallbackCharacter.id);
+        setState(
+          readStoredChatState(sessionId, fallbackCharacter, welcomeText) ||
+          buildDefaultChatState(fallbackCharacter, fallbackCharacter.id, welcomeText)
+        );
+        onCharacterChange(fallbackCharacter.id);
       }
     } finally {
       setIsLoading(false);
@@ -758,13 +896,8 @@ export function ChatPanel({
       const created = await createDigitalHuman(payload);
       onCreate(created.human);
       onCharacterChange(created.human.id);
-      setState((prev) => ({
-        ...prev,
-        characterId: created.human.id,
-        emotion: created.human.defaultMood,
-        relationshipMode: created.human.relationshipMode || state.relationshipMode || "sweet",
-        context: undefined
-      }));
+      activeChatStorageKeyRef.current = getChatStateStorageKey(sessionId, created.human.id);
+      setState(buildDefaultChatState(created.human, created.human.id, welcomeText));
       setForm({
         ...form,
         name: "",

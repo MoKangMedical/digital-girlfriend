@@ -56,7 +56,7 @@ npm run dev
    - `npm run build:web`（即 `npm run build --workspace @dg/web`）
    - 自动上传构建产物并发布到 GitHub Pages（`workflow` 模式）。
 
-未配置 `VITE_API_URL` 时，GitHub Pages 会自动启用前端本地静态体验：内置数字人可加载，聊天会用本地流式回复，表情、关系状态和浏览器语音播报仍可使用；配置公网 API 后会优先使用真实后端。
+未配置 `VITE_API_URL` 时，GitHub Pages 会自动启用前端本地静态体验：内置数字人可加载，聊天会用本地流式回复，表情、关系状态和浏览器语音播报仍可使用；用户创建的数字人、当前 3D/2D 模式、每个数字人的聊天记录和关系状态会保存在当前浏览器 `localStorage`，刷新后仍可继续使用。配置公网 API 后会优先使用真实后端。
 
 本地一键验证（按你要求）：
 
