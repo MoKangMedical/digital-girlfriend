@@ -258,10 +258,18 @@ export async function sendMessageStream(payload: ChatRequest, handlers: ChatStre
 export function resolveMediaUrl(url?: string): string | undefined {
   const trimmed = String(url || "").trim();
   if (!trimmed) return undefined;
+  const publicBase = import.meta.env.BASE_URL || "/";
+
   if (/^(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?\/\//.test(trimmed) || /^data:|^blob:/i.test(trimmed)) {
     return trimmed;
   }
   if (!API_BASE) {
+    if (trimmed.startsWith("/")) {
+      if (publicBase === "/") {
+        return trimmed;
+      }
+      return `${publicBase.replace(/\/?$/, "/")}${trimmed.slice(1)}`;
+    }
     return trimmed;
   }
   if (trimmed.startsWith("/")) {

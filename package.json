@@ -6,6 +6,7 @@
     "dev": "npm run dev --workspaces --if-present --parallel",
     "dev:all": "node ./scripts/dev-all.mjs",
     "start:all": "node ./scripts/dev-all.mjs",
+    "build:web": "npm run build --workspace @dg/web",
     "prepare:ios": "npm run build --workspace @dg/web && npm run prepare:ios --workspace @dg/mobile",
     "build:ios": "npm run build:for-ios",
     "sync:ios": "npm run sync:ios --workspace @dg/mobile",

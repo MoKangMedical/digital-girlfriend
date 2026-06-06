@@ -2,31 +2,31 @@
   "name": "数字女友",
   "short_name": "数字女友",
   "description": "数字人陪伴平台，支持网站、小程序与 iOS 同步体验",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#0f1322",
   "theme_color": "#0f1322",
   "icons": [
     {
-      "src": "/icons/app-icon.svg",
+      "src": "icons/app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icons/app-icon-180.svg",
+      "src": "icons/app-icon-180.svg",
       "sizes": "180x180",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/assets/avatars/lina.svg",
+      "src": "assets/avatars/lina.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     },
     {
-      "src": "/icons/app-icon.svg",
+      "src": "icons/app-icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"

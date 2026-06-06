@@ -18,6 +18,10 @@ import {
 } from "../services/api";
 import { Avatar } from "./Avatar";
 
+const PUBLIC_ASSET_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
+const defaultAvatarUrl = `${PUBLIC_ASSET_BASE}assets/avatars/lina.svg`;
+const assetPlaceholderBase = `${PUBLIC_ASSET_BASE}assets`;
+
 interface Bubble {
   role: Message["role"];
   content: string;
@@ -202,7 +206,7 @@ export function ChatPanel({
   const [form, setForm] = useState<NewCharacterForm>({
     name: "",
     description: "",
-    avatarUrl: "/assets/avatars/lina.svg",
+    avatarUrl: defaultAvatarUrl,
     voiceProvider: "openai",
     voice: "nova",
     defaultMood: "neutral",
@@ -708,7 +712,7 @@ export function ChatPanel({
         ...form,
         name: "",
         description: "",
-        avatarUrl: "/assets/avatars/lina.svg",
+        avatarUrl: defaultAvatarUrl,
         voiceProvider: "openai",
         voice: "nova",
         emotionProfile: "{}",
@@ -875,13 +879,13 @@ export function ChatPanel({
             rows={3}
             value={form.emotionProfile}
             onChange={(e) => setForm((prev) => ({ ...prev, emotionProfile: e.target.value }))}
-            placeholder='情绪头像（可选）示例：{ "happy": "https://.../happy.png", "sad": "/assets/expressions/sad.png", "wink": "..." }'
+            placeholder={`情绪头像（可选）示例：{ "happy": "https://.../happy.png", "sad": "${assetPlaceholderBase}/expressions/sad.svg", "wink": "..." }`}
           />
           <textarea
             rows={3}
             value={form.avatarVideoProfile}
             onChange={(e) => setForm((prev) => ({ ...prev, avatarVideoProfile: e.target.value }))}
-            placeholder='情绪视频（可选，avatarType=video时生效）示例：{ "happy": "/assets/videos/happy.mp4", "neutral": "https://.../neutral.mp4" }'
+            placeholder={`情绪视频（可选，avatarType=video时生效）示例：{ "happy": "${assetPlaceholderBase}/videos/happy.mp4", "neutral": "https://.../neutral.mp4" }`}
           />
           <button type="submit">创建</button>
         </form>
@@ -889,11 +893,12 @@ export function ChatPanel({
         <Avatar
           emotion={state.emotion}
           speaking={speaking}
-          avatarUrl={activeCharacter?.avatarUrl || "/assets/avatars/lina.svg"}
+          avatarUrl={activeCharacter?.avatarUrl || defaultAvatarUrl}
           name={activeCharacter?.name || "数字人"}
           emotionProfile={activeCharacter?.emotionProfile}
           avatarType={activeCharacter?.avatarType}
           avatarVideoProfile={activeCharacter?.avatarVideoProfile}
+          use3D
         />
 
         <section className="relationship-card">

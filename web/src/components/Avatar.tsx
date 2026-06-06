@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Emotion, EmotionProfile, resolveMediaUrl } from "../services/api";
+import { Girlfriend3D } from "./Girlfriend3D";
 
 interface AvatarProps {
   emotion: Emotion;
@@ -9,6 +10,7 @@ interface AvatarProps {
   emotionProfile?: EmotionProfile;
   avatarType?: "image" | "video";
   avatarVideoProfile?: EmotionProfile;
+  use3D?: boolean;
 }
 
 function resolveEmotionImage(profile: EmotionProfile | undefined, emotion: Emotion): string | null {
@@ -69,7 +71,8 @@ export function Avatar({
   name = "数字人",
   emotionProfile,
   avatarType,
-  avatarVideoProfile
+  avatarVideoProfile,
+  use3D = true
 }: AvatarProps) {
   const emotionImageRaw = resolveEmotionImage(emotionProfile, emotion);
   const emotionImage = resolveMediaUrl(emotionImageRaw || undefined);
@@ -77,6 +80,7 @@ export function Avatar({
   const shouldShowVideo = avatarType === "video";
   const emotionVideo = shouldShowVideo ? resolveMediaUrl(resolveEmotionVideo(avatarVideoProfile, emotion) || undefined) : undefined;
   const [lipBeat, setLipBeat] = useState(false);
+  const canRender3D = typeof window !== "undefined" && "WebGLRenderingContext" in window;
 
   useEffect(() => {
     if (!speaking) {
@@ -97,35 +101,43 @@ export function Avatar({
   return (
     <div className={`avatar ${speaking ? "speaking" : ""}`}>
       <div className="avatar-name">{name}</div>
-      <div className="portrait-wrap">
-        <img className="portrait" src={resolvedAvatar || avatarUrl} alt={name} />
-      </div>
       <div className="headphone">🎧</div>
-      <div className="face-wrap">
-        {emotionVideo ? (
-          <video
-            key={`${emotion}-${emotionVideo}`}
-            className={`face-video ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
-            src={emotionVideo}
-            autoPlay
-            muted
-            loop
-            playsInline
-          />
-        ) : emotionImage ? (
-          <img
-            className={`face-image ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
-            src={emotionImage}
-            alt={`${emotion} 表情`}
-          />
-        ) : (
-          <div
-            className={`${classByEmotion[emotion]} ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
-          >
-            {expressionByEmotion[emotion]}
+      {use3D && canRender3D ? (
+        <div className="avatar-3d-shell" aria-hidden="true">
+          <Girlfriend3D emotion={emotion} speaking={speaking} />
+        </div>
+      ) : (
+        <>
+          <div className="portrait-wrap">
+            <img className="portrait" src={resolvedAvatar || avatarUrl} alt={name} />
           </div>
-        )}
-      </div>
+          <div className="face-wrap">
+            {emotionVideo ? (
+              <video
+                key={`${emotion}-${emotionVideo}`}
+                className={`face-video ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
+                src={emotionVideo}
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            ) : emotionImage ? (
+              <img
+                className={`face-image ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
+                src={emotionImage}
+                alt={`${emotion} 表情`}
+              />
+            ) : (
+              <div
+                className={`${classByEmotion[emotion]} ${speaking ? "talking" : ""} ${lipBeat ? "lip-open" : "lip-close"}`}
+              >
+                {expressionByEmotion[emotion]}
+              </div>
+            )}
+          </div>
+        </>
+      )}
       <div className="status">{makeStatusText(emotion)}</div>
     </div>
   );

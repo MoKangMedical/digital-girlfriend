@@ -31,6 +31,7 @@ const DATA_DIR = path.join(WORKSPACE_ROOT, "server", "src", "data");
 const CUSTOM_FILE = path.join(DATA_DIR, "custom-humans.json");
 const AUDIO_DIR = path.join(WORKSPACE_ROOT, "server", "data", "audio");
 const STATIC_ASSETS_DIR = path.join(WORKSPACE_ROOT, "web", "public", "assets");
+const WEB_APP_URL = process.env.WEB_APP_URL?.trim() || "http://127.0.0.1:5173";
 
 async function getCharacters(): Promise<DigitalHumanConfig[]> {
   const base = await fs.readFile(path.join(DATA_DIR, "digital-humans.json"), "utf8");
@@ -387,8 +388,6 @@ app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
 });
 
-const WEB_APP_URL = process.env.WEB_APP_URL?.trim() || "http://127.0.0.1:5173";
-
 app.get("/", (_req, res) => {
   const webUrl = WEB_APP_URL.endsWith("/") ? WEB_APP_URL : `${WEB_APP_URL}/`;
   const safeWebUrl = webUrl.replace(/"/g, "&quot;");
@@ -397,7 +396,7 @@ app.get("/", (_req, res) => {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>数字女友 API 服务</title>
+    <title>数字女友 - API 服务提示页</title>
     <style>
       body {
         margin: 0;
@@ -436,8 +435,8 @@ app.get("/", (_req, res) => {
   </head>
   <body>
     <div class="container">
-      <h1>数字女友 API 服务已启动</h1>
-      <p class="hint">当前是后端 API 端口，请直接打开前端页面体验：</p>
+      <h1>你打开的是后端 API 端口</h1>
+      <p class="hint">请访问前端入口 <strong>5173</strong> 继续使用聊天体验：</p>
       <a class="primary" href="${safeWebUrl}">请访问 5173</a>
       <p class="muted">如果你已设置其他前端端口，请配置环境变量 WEB_APP_URL。</p>
       <p><a href="${safeWebUrl}">${safeWebUrl}</a></p>

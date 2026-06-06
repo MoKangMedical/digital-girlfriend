@@ -1,13 +1,16 @@
 const CACHE_NAME = "digital-girlfriend-v1";
 
+const APP_BASE = new URL(self.registration.scope).pathname;
+const normalize = (path) => `${APP_BASE}${path.replace(/^\//, "")}`;
+
 const PRECACHE = [
-  "/",
-  "/manifest.webmanifest",
-  "/assets/avatars/lina.svg",
-  "/assets/avatars/moon.svg",
-  "/icons/app-icon.svg",
-  "/icons/app-icon-180.svg",
-  "/index.html"
+  normalize(""),
+  normalize("manifest.webmanifest"),
+  normalize("assets/avatars/lina.svg"),
+  normalize("assets/avatars/moon.svg"),
+  normalize("icons/app-icon.svg"),
+  normalize("icons/app-icon-180.svg"),
+  normalize("index.html")
 ];
 
 self.addEventListener("install", (event) => {
@@ -38,7 +41,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/audio")) {
+  if (url.pathname.startsWith(`${APP_BASE}api/`) || url.pathname.startsWith(`${APP_BASE}audio`)) {
     event.respondWith(fetch(request));
     return;
   }

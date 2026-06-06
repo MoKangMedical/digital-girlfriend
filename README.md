@@ -39,6 +39,42 @@ cd web && npm install
 npm run dev
 ```
 
+## GitHub Pages 发布（可直接访问）
+
+建议在 GitHub 上新建仓库后，按以下步骤直接发布到 GitHub Pages：
+
+发布成功后，默认访问地址为：
+
+`https://<你的GitHub用户或组织>.github.io/<你的仓库名>/`
+
+1. 在仓库 Settings → Secrets and variables → Actions 中新增环境变量（可选，推荐 Repository variable）：
+   - `VITE_API_URL`（你的后端公网地址，例如 `https://api.xxx.com`）
+2. 保证主分支推送到 `main`。
+3. Push 后 `.github/workflows/gh-pages.yml` 会自动执行：
+   - `npm run build:web`（即 `npm run build --workspace @dg/web`）
+   - 部署 `web/dist` 到 `gh-pages` 分支。
+
+本地一键验证（按你要求）：
+
+```bash
+# 安装依赖
+npm install
+
+# 打包网站
+npm run build:web
+
+# 本地联调（后端+网站）
+npm run dev:all
+```
+
+验证 8787 提示页与 5173 页面：
+
+```bash
+curl -I http://127.0.0.1:8787/ | head -n 1
+```
+
+应返回 200，并在页面上看到「请访问 5173」提示；再打开 `http://127.0.0.1:5173/` 能进入聊天页。
+
 ## 一键启动（后端 + 网站）
 
 ```bash

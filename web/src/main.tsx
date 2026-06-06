@@ -5,8 +5,9 @@ import "./styles.css";
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator && !import.meta.env.DEV) {
   window.addEventListener("load", () => {
+    const swPath = `${import.meta.env.BASE_URL}sw.js`;
     navigator.serviceWorker
-      .register("/sw.js")
+      .register(swPath)
       .catch(() => {
         // 离线能力为可选增强，忽略注册失败，不阻塞启动
       });
