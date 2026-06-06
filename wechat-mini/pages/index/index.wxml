@@ -1,0 +1,171 @@
+<view class="page">
+  <view class="character">
+    <picker
+      class="selector"
+      range="{{characterNames}}"
+      range-key=""
+      value="{{pickerIndex}}"
+      bindchange="onCharacterChange"
+    >
+      <view class="selector-text">当前数字人：{{characterNames[pickerIndex] || "Lina"}}</view>
+    </picker>
+  </view>
+
+  <view class="character">
+    <view class="character-name">{{characterName}}</view>
+    <button
+      wx:if="{{characterId.indexOf('custom-') === 0}}"
+      bindtap="onDeleteCurrentHuman"
+      type="default"
+      class="delete-btn"
+      size="mini"
+      disabled="{{loading}}"
+    >
+      删除当前数字人
+    </button>
+    <image class="portrait" mode="aspectFill" src="{{characterAvatar}}" />
+    <view class="face {{speaking ? 'talking' : ''}} {{lipPhase ? 'lip-open' : 'lip-close'}}">
+      <block wx:if="{{expressionVideo}}">
+        <video
+          class="expression-video {{speaking ? 'talking' : ''}} {{lipPhase ? 'lip-open' : 'lip-close'}}"
+          src="{{expressionVideo}}"
+          autoplay="{{true}}"
+          muted="{{true}}"
+          loop="{{true}}"
+          controls="{{false}}"
+        />
+      </block>
+      <block wx:elif="{{expressionImage}}">
+        <image
+          class="expression-image {{speaking ? 'talking' : ''}} {{lipPhase ? 'lip-open' : 'lip-close'}}"
+          src="{{expressionImage}}"
+          mode="aspectFill"
+        />
+      </block>
+      <block wx:else>
+        {{expression}}
+      </block>
+    </view>
+    <view class="label">{{emotionLabel}}</view>
+  <view class="relation-label">
+      关系：{{relationshipAffinityLabel || relationshipAffinity || "待启动"}}（{{relationshipTurns || 0}}）
+    </view>
+    <view class="relation-label">
+      对话风格：{{conversationRelationshipMode || "sweet"}}
+    </view>
+    <view wx:if="{{relationshipSummary}}" class="relation-summary">{{relationshipSummary}}</view>
+    <view wx:if="{{relationshipSignals}}" class="relation-summary">关键词：{{relationshipSignals}}</view>
+
+    <picker
+      class="selector"
+      mode="selector"
+      range="{{['sweet','flirty','playful','mature']}}"
+      value="{{['sweet','flirty','playful','mature'].indexOf(conversationRelationshipMode || 'sweet')}}"
+      bindchange="onConversationRelationshipModeChange"
+    >
+      <view class="selector-text">对话风格：{{conversationRelationshipMode || 'sweet'}}</view>
+    </picker>
+  </view>
+
+  <scroll-view class="messages" scroll-y>
+    <block wx:for="{{messages}}" wx:key="idx">
+      <view class="msg {{item.role}}">{{item.role === 'user' ? '我' : '她'}}：{{item.content}}</view>
+    </block>
+  </scroll-view>
+
+  <view class="action-row">
+    <button type="default" bindtap="resetSession" disabled="{{loading}}">清空对话</button>
+  </view>
+
+  <view class="bottom">
+    <button
+      class="voice-btn {{isRecording ? 'recording' : ''}}"
+      bindtouchstart="onStartVoiceInput"
+      bindtouchend="onEndVoiceInput"
+      bindtouchcancel="onEndVoiceInput"
+      bindtap="onToggleVoiceInput"
+      type="default"
+      disabled="{{loading || isTranscribing}}">
+      {{isRecording ? "停止录音" : (isTranscribing ? "识别中" : "语音输入")}}
+    </button>
+    <input value="{{input}}" bindinput="onInput" placeholder="发送消息（不设限）" />
+    <button bindtap="onSend" type="primary" disabled="{{loading}}">发送</button>
+  </view>
+  <view wx:if="{{transcribeError}}" class="error">{{transcribeError}}</view>
+
+  <view class="creator">
+    <view class="creator-title">创建数字人</view>
+    <input value="{{newHuman.name}}" data-field="name" bindinput="onCreateInput" placeholder="名字" />
+    <input
+      value="{{newHuman.description}}"
+      data-field="description"
+      bindinput="onCreateInput"
+      placeholder="人设描述"
+    />
+    <input
+      value="{{newHuman.avatarUrl}}"
+      data-field="avatarUrl"
+      bindinput="onCreateInput"
+      placeholder="头像地址（http 或本地静态资源）"
+    />
+    <input value="{{newHuman.voice}}" data-field="voice" bindinput="onCreateInput" placeholder="声音 ID（nova/alloy）" />
+    <picker
+      class="selector"
+      mode="selector"
+      range="{{['neutral','happy','sad','surprise','wink','angry','love']}}"
+      value="{{['neutral','happy','sad','surprise','wink','angry','love'].indexOf(createMood)}}"
+      bindchange="onCreateModeChange"
+    >
+      <view class="selector-text">默认情绪：{{createMood}}</view>
+    </picker>
+    <input
+      value="{{newHuman.personalityTagline}}"
+      data-field="personalityTagline"
+      bindinput="onCreateInput"
+      placeholder="人设口令（例如：轻松撒娇，但很贴心）"
+    />
+    <picker
+      class="selector"
+      mode="selector"
+      range="{{['openai','azure','local']}}"
+      value="{{['openai','azure','local'].indexOf(newHuman.voiceProvider || 'openai')}}"
+      bindchange="onCreateVoiceProviderChange"
+    >
+      <view class="selector-text">声音源：{{newHuman.voiceProvider || 'openai'}}</view>
+    </picker>
+    <picker
+      class="selector"
+      mode="selector"
+      range="{{['sweet','flirty','playful','mature']}}"
+      value="{{['sweet','flirty','playful','mature'].indexOf(newHuman.relationshipMode || 'sweet')}}"
+      bindchange="onCreateRelationshipModeChange"
+    >
+      <view class="selector-text">关系风格：{{newHuman.relationshipMode || 'sweet'}}</view>
+    </picker>
+    <picker
+      class="selector"
+      mode="selector"
+      range="{{['image','video']}}"
+      value="{{newHuman.avatarType === 'video' ? 1 : 0}}"
+      bindchange="onAvatarTypeChange"
+    >
+      <view class="selector-text">形象模式：{{newHuman.avatarType || 'image'}}</view>
+    </picker>
+    <textarea
+      class="textarea"
+      value="{{newHuman.emotionProfile}}"
+      data-field="emotionProfile"
+      bindinput="onCreateInput"
+      placeholder='情绪图片映射（可选）示例：{ "happy": "/assets/expressions/happy.svg", "sad": "/assets/expressions/sad.svg" }'
+    />
+    <textarea
+      class="textarea"
+      value="{{newHuman.avatarVideoProfile}}"
+      data-field="avatarVideoProfile"
+      bindinput="onCreateInput"
+      placeholder='情绪视频映射（可选，avatarType=video）示例：{ "happy": "/assets/videos/happy.mp4", "neutral": "https://cdn.../neutral.mp4" }'
+    />
+    <button bindtap="onCreateHuman" type="default" loading="{{creating}}">创建</button>
+    <view wx:if="{{createError}}" class="error">{{createError}}</view>
+  </view>
+</view>

@@ -1,0 +1,180 @@
+.page {
+  min-height: 100vh;
+  background: #0f1322;
+  color: #f4f7ff;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.character {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.face {
+  font-size: 48px;
+  margin-bottom: 8px;
+  min-height: 60px;
+  transition: transform 0.18s ease;
+  display: inline-block;
+}
+
+.face.talking {
+  transition: transform 0.18s ease;
+}
+
+.face.lip-open {
+  transform: scaleY(0.9) scaleX(1.03);
+}
+
+.face.lip-close {
+  transform: scaleY(1) scaleX(1);
+}
+
+.expression-video {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid #2e4066;
+}
+
+.expression-image {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 1px solid #2e4066;
+  object-fit: cover;
+}
+
+.character-name {
+  font-size: 15px;
+  color: #95b9ea;
+  margin-bottom: 8px;
+}
+
+.relation-label {
+  margin-top: 6px;
+  color: #c8d9ff;
+  font-size: 12px;
+}
+
+.relation-summary {
+  margin-top: 6px;
+  color: #d8e7ff;
+  font-size: 11px;
+  line-height: 1.35;
+  background: rgba(26, 40, 68, 0.8);
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid #2f456d;
+}
+
+.portrait {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  border: 2px solid #344d7a;
+}
+
+.messages {
+  flex: 1;
+  margin-bottom: 12px;
+  max-height: 65vh;
+  border: 1px solid #314067;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.msg {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.user { background: #2d4059; }
+.assistant { background: #4f4f79; }
+
+.bottom {
+  display: flex;
+  gap: 8px;
+}
+
+.action-row {
+  margin: 8px 0 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action-row button {
+  min-width: 96px;
+}
+
+input {
+  flex: 1;
+}
+
+.voice-btn {
+  min-width: 84px;
+  background: #1f3a63;
+  color: #f5f8ff;
+  border: 1px solid #365a8b;
+}
+
+.voice-btn.recording {
+  background: #ff6e6e;
+  color: #fff;
+}
+
+.voice-btn::after {
+  border: 0;
+}
+
+.selector {
+  background: #1b2741;
+  border: 1px solid #314067;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.selector-text {
+  color: #f4f7ff;
+  text-align: center;
+}
+
+.creator {
+  border: 1px solid #314067;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.delete-btn {
+  background: #ff7f7f;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.creator-title {
+  font-size: 14px;
+  color: #9eb4d4;
+}
+
+.error {
+  color: #ff90a0;
+  font-size: 13px;
+}
+
+.textarea {
+  min-height: 72px;
+  border: 1px solid #314067;
+  border-radius: 10px;
+  background: #0f1726;
+  color: #f4f7ff;
+  padding: 8px 10px;
+}
