@@ -149,6 +149,63 @@
   text-align: right;
 }
 
+.archive-card {
+  margin: 10px auto 10px;
+  padding: 10px;
+  max-width: 660rpx;
+  border: 1px solid #2f456d;
+  border-radius: 10px;
+  background: rgba(16, 25, 44, 0.92);
+  text-align: left;
+}
+
+.archive-title {
+  margin-bottom: 8px;
+  color: #f4f7ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.archive-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.archive-actions button,
+.archive-import {
+  color: #f4f7ff;
+  background: #23456e;
+}
+
+.archive-actions button::after,
+.archive-import::after {
+  border: 0;
+}
+
+.archive-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 86px;
+  margin-bottom: 8px;
+  border: 1px solid #314067;
+  border-radius: 8px;
+  background: #0f1726;
+  color: #f4f7ff;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.archive-status {
+  margin-top: 8px;
+  color: #9ff2ce;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .render-row {
   display: flex;
   align-items: center;

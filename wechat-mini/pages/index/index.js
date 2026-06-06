@@ -4,6 +4,10 @@ const STORAGE_KEY_LOCAL_HUMANS = "dg-mini-local-digital-humans-v1";
 const STORAGE_KEY_LOCAL_CONTEXT = "dg-mini-local-chat-context-v1";
 const STORAGE_KEY_AVATAR_RENDER_MODE = "dg-mini-avatar-render-mode";
 const STORAGE_KEY_USER_MEMORY = "dg-mini-user-memory-v1";
+const STORAGE_KEY_CHAT_STATES = "dg-mini-chat-states-v1";
+const EXPORT_SCHEMA = "digital-girlfriend-local-archive";
+const CHAT_STATE_ARCHIVE_PREFIX = "dg-chat-state-v1";
+const MAX_STORED_MESSAGES = 80;
 
 const expressionMap = {
   happy: "(^_^)",
@@ -331,6 +335,236 @@ function buildUserMemorySystemMessage(memory, character) {
   return {
     role: "system",
     content: lines.join("\n")
+  };
+}
+
+function isEmotion(value) {
+  return typeof value === "string" && emotionModes.includes(value);
+}
+
+function isRelationshipMode(value) {
+  return typeof value === "string" && relationshipModes.includes(value);
+}
+
+function normalizeStoredMessages(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => ({
+      role: item?.role,
+      content: normalizeMemoryText(item?.content, 1200)
+    }))
+    .filter((item) => (item.role === "user" || item.role === "assistant" || item.role === "system") && item.content)
+    .slice(-MAX_STORED_MESSAGES);
+}
+
+function normalizeStoredContext(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const affinity = raw.relationshipAffinity;
+  if (affinity !== "new" && affinity !== "warm" && affinity !== "close" && affinity !== "intimate") {
+    return null;
+  }
+  if (!isEmotion(raw.lastEmotion)) return null;
+
+  return {
+    relationshipAffinity: affinity,
+    summary: normalizeMemoryText(raw.summary, 600),
+    userSignals: Array.isArray(raw.userSignals)
+      ? raw.userSignals.map((item) => normalizeMemoryText(item, 60)).filter(Boolean).slice(-8)
+      : [],
+    lastEmotion: raw.lastEmotion,
+    activeRelationshipMode: isRelationshipMode(raw.activeRelationshipMode) ? raw.activeRelationshipMode : undefined,
+    turnCount: typeof raw.turnCount === "number" ? raw.turnCount : 0,
+    updatedAt: normalizeMemoryText(raw.updatedAt, 60)
+  };
+}
+
+function normalizeImportedChatState(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const messages = normalizeStoredMessages(raw.messages);
+  if (!messages.length) return null;
+  const context = normalizeStoredContext(raw.context);
+  return {
+    version: 1,
+    messages,
+    emotion: isEmotion(raw.emotion) ? raw.emotion : context?.lastEmotion || "neutral",
+    relationshipMode: isRelationshipMode(raw.relationshipMode)
+      ? raw.relationshipMode
+      : context?.activeRelationshipMode || "sweet",
+    context,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function getArchiveChatStateKey(sessionId, characterId) {
+  return `${CHAT_STATE_ARCHIVE_PREFIX}:${encodeURIComponent(sessionId || "session-mini")}:${encodeURIComponent(characterId || "lina")}`;
+}
+
+function readMiniChatStates() {
+  const value = readStorageJson(STORAGE_KEY_CHAT_STATES, {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function saveMiniChatStates(states) {
+  writeStorageJson(STORAGE_KEY_CHAT_STATES, states && typeof states === "object" && !Array.isArray(states) ? states : {});
+}
+
+function saveMiniChatState(sessionId, characterId, state) {
+  const normalized = normalizeImportedChatState(state);
+  if (!normalized) return;
+  const states = readMiniChatStates();
+  states[getArchiveChatStateKey(sessionId, characterId)] = normalized;
+  saveMiniChatStates(states);
+}
+
+function readMiniChatState(sessionId, characterId) {
+  const states = readMiniChatStates();
+  return normalizeImportedChatState(states[getArchiveChatStateKey(sessionId, characterId)]);
+}
+
+function normalizeImportedHumans(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const id = normalizeMemoryText(item.id, 100);
+      const name = normalizeMemoryText(item.name, 80);
+      if (!id.startsWith("custom-") || !name) return null;
+      const voiceProfile = item.voiceProfile && typeof item.voiceProfile === "object" ? item.voiceProfile : {};
+      const provider = voiceProviders.includes(voiceProfile.provider) ? voiceProfile.provider : "local";
+      return {
+        id,
+        name,
+        description: normalizeMemoryText(item.description || "导入的数字人", 300),
+        avatarUrl: normalizeMemoryText(item.avatarUrl || "/assets/avatars/lina.svg", 500),
+        modelUrl: normalizeMemoryText(item.modelUrl, 500) || undefined,
+        avatarType: item.avatarType === "video" ? "video" : "image",
+        emotionProfile: normalizeEmotionProfile(item.emotionProfile),
+        avatarVideoProfile: normalizeEmotionProfile(item.avatarVideoProfile),
+        personalityTagline: normalizeMemoryText(item.personalityTagline, 200),
+        relationshipMode: isRelationshipMode(item.relationshipMode) ? item.relationshipMode : "sweet",
+        voiceProfile: {
+          provider,
+          voice: normalizeMemoryText(voiceProfile.voice || "browser-zh-CN", 120)
+        },
+        defaultMood: isEmotion(item.defaultMood) ? item.defaultMood : "neutral"
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeImportedContexts(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result = {};
+  Object.keys(raw).forEach((key) => {
+    const context = normalizeStoredContext(raw[key]);
+    if (context) {
+      result[String(key)] = context;
+    }
+  });
+  return result;
+}
+
+function buildCurrentChatState(data) {
+  const context =
+    data.relationshipAffinity && isEmotion(data.emotion)
+      ? {
+          relationshipAffinity: data.relationshipAffinity,
+          summary: normalizeMemoryText(data.relationshipSummary, 600),
+          userSignals: normalizeMemoryText(data.relationshipSignals, 300).split("、").map((item) => item.trim()).filter(Boolean),
+          lastEmotion: data.emotion,
+          activeRelationshipMode: isRelationshipMode(data.conversationRelationshipMode) ? data.conversationRelationshipMode : undefined,
+          turnCount: Number(data.relationshipTurns || 0),
+          updatedAt: new Date().toISOString()
+        }
+      : null;
+
+  return normalizeImportedChatState({
+    version: 1,
+    messages: data.messages,
+    emotion: data.emotion,
+    relationshipMode: data.conversationRelationshipMode || "sweet",
+    context
+  });
+}
+
+function buildMiniArchive(data) {
+  const currentState = buildCurrentChatState(data);
+  const chatStates = readMiniChatStates();
+  if (currentState) {
+    chatStates[getArchiveChatStateKey(data.sessionId, data.characterId)] = currentState;
+    saveMiniChatStates(chatStates);
+  }
+
+  return {
+    schema: EXPORT_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sessionId: data.sessionId,
+    selectedCharacterId: data.characterId,
+    avatarRenderMode: data.avatarRenderMode === "2d" ? "2d" : "3d",
+    userMemory: normalizeUserMemory(data.userMemory),
+    localHumans: normalizeImportedHumans(getLocalCustomHumans()),
+    localContexts: normalizeImportedContexts(readLocalContexts()),
+    chatStates: Object.keys(chatStates).map((key) => ({ key, value: chatStates[key] }))
+  };
+}
+
+function importMiniArchive(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("导入内容格式不正确");
+  }
+  if (payload.schema !== EXPORT_SCHEMA || payload.version !== 1) {
+    throw new Error("不是数字女友本地记录文件");
+  }
+
+  const importedHumans = normalizeImportedHumans(payload.localHumans);
+  const humanMap = new Map(getLocalCustomHumans().map((item) => [item.id, item]));
+  importedHumans.forEach((human) => humanMap.set(human.id, human));
+  saveLocalCustomHumans(Array.from(humanMap.values()));
+
+  const importedContexts = normalizeImportedContexts(payload.localContexts);
+  writeStorageJson(STORAGE_KEY_LOCAL_CONTEXT, {
+    ...readLocalContexts(),
+    ...importedContexts
+  });
+
+  const importedMemory = normalizeUserMemory(payload.userMemory);
+  const hasMemory = hasUserMemory(importedMemory);
+  if (hasMemory) {
+    writeStorageJson(STORAGE_KEY_USER_MEMORY, importedMemory);
+  }
+
+  const chatStates = readMiniChatStates();
+  let importedChatCount = 0;
+  if (Array.isArray(payload.chatStates)) {
+    payload.chatStates.forEach((entry) => {
+      const key = normalizeMemoryText(entry?.key, 220);
+      if (!key.startsWith(`${CHAT_STATE_ARCHIVE_PREFIX}:`)) return;
+      const state = normalizeImportedChatState(entry.value);
+      if (!state) return;
+      chatStates[key] = state;
+      importedChatCount += 1;
+    });
+  }
+  saveMiniChatStates(chatStates);
+
+  if (payload.sessionId) {
+    wx.setStorageSync(STORAGE_KEY_SESSION, normalizeMemoryText(payload.sessionId, 120));
+  }
+  if (payload.selectedCharacterId) {
+    wx.setStorageSync(STORAGE_KEY_CHARACTER, normalizeMemoryText(payload.selectedCharacterId, 120));
+  }
+  if (payload.avatarRenderMode === "2d" || payload.avatarRenderMode === "3d") {
+    wx.setStorageSync(STORAGE_KEY_AVATAR_RENDER_MODE, payload.avatarRenderMode);
+  }
+
+  return {
+    humans: importedHumans.length,
+    chats: importedChatCount,
+    hasMemory,
+    sessionId: normalizeMemoryText(payload.sessionId, 120),
+    selectedCharacterId: normalizeMemoryText(payload.selectedCharacterId, 120),
+    avatarRenderMode: payload.avatarRenderMode === "2d" ? "2d" : "3d"
   };
 }
 
@@ -703,6 +937,8 @@ Page({
     userMemory: { ...emptyUserMemory },
     memoryActive: false,
     memoryStatus: "",
+    archiveText: "",
+    archiveStatus: "",
     speaking: false,
     lipPhase: 0,
     newHuman: {
@@ -850,6 +1086,9 @@ Page({
       fail: () => {},
       complete: () => {
         clearLocalContext(this.data.sessionId);
+        const chatStates = readMiniChatStates();
+        delete chatStates[getArchiveChatStateKey(this.data.sessionId, this.data.characterId)];
+        saveMiniChatStates(chatStates);
         wx.setStorageSync(STORAGE_KEY_SESSION, newSessionId);
         this.setData({
           sessionId: newSessionId,
@@ -909,6 +1148,32 @@ Page({
     });
     wx.setStorageSync(STORAGE_KEY_CHARACTER, selectedId);
     this.applyEmotion(selected?.defaultMood || "neutral", selected);
+    this._restoreStoredChatState(selectedId, selected);
+  },
+
+  _restoreStoredChatState(characterId, character) {
+    const stored = readMiniChatState(this.data.sessionId, characterId);
+    if (!stored) return;
+
+    const visibleMessages = stored.messages.filter((item) => item.role === "user" || item.role === "assistant");
+    if (!visibleMessages.length) return;
+
+    const context = stored.context || null;
+    const signals = Array.isArray(context?.userSignals) ? context.userSignals.join("、") : "";
+    const affinity = context?.relationshipAffinity || "";
+    const activeCharacter = character || getActiveCharacter(this);
+
+    this.setData({
+      messages: visibleMessages,
+      emotion: stored.emotion,
+      relationshipAffinity: affinity,
+      relationshipAffinityLabel: affinity ? relationshipLevelLabel[affinity] || affinity : "",
+      relationshipSummary: context?.summary || "",
+      relationshipSignals: signals,
+      relationshipTurns: context?.turnCount || 0,
+      conversationRelationshipMode: stored.relationshipMode || context?.activeRelationshipMode || activeCharacter?.relationshipMode || "sweet"
+    });
+    this.applyEmotion(stored.emotion, activeCharacter);
   },
 
   _loadLocalCharacters(preferredCharacterId) {
@@ -950,6 +1215,7 @@ Page({
       conversationRelationshipMode: selected.relationshipMode || "sweet"
     });
     this.applyEmotion(selected.defaultMood || "neutral", selected);
+    this._restoreStoredChatState(selected.id, selected);
   },
 
   onToggleAvatarRenderMode() {
@@ -1068,9 +1334,10 @@ Page({
     const finalize = () => {
       clearInterval(this._revealTimer);
       this._revealTimer = null;
+      const finalMessages = [...baseMessages.slice(0, assistantIndex), { role: "assistant", content: fullText }];
       this.applyEmotion(finalEmotion, activeCharacter);
       this.setData({
-        messages: [...baseMessages.slice(0, assistantIndex), { role: "assistant", content: fullText }],
+        messages: finalMessages,
         speaking: false,
         loading: false,
         relationshipAffinityLabel: contextAffinityLabel,
@@ -1079,6 +1346,13 @@ Page({
         relationshipSignals: contextSignals,
         relationshipTurns: contextTurns,
         conversationRelationshipMode: finalContext?.activeRelationshipMode || this.data.conversationRelationshipMode || "sweet"
+      });
+      saveMiniChatState(this.data.sessionId, this.data.characterId, {
+        version: 1,
+        messages: finalMessages,
+        emotion: finalEmotion,
+        relationshipMode: finalContext?.activeRelationshipMode || this.data.conversationRelationshipMode || "sweet",
+        context: finalContext
       });
       this.stopLipAnimation();
 
@@ -1200,6 +1474,82 @@ Page({
       userMemory: { ...emptyUserMemory },
       memoryActive: false,
       memoryStatus: "记忆已清空。"
+    });
+  },
+
+  onArchiveTextInput(e) {
+    this.setData({
+      archiveText: e.detail.value,
+      archiveStatus: ""
+    });
+  },
+
+  onExportArchive() {
+    try {
+      const archive = buildMiniArchive(this.data);
+      const raw = JSON.stringify(archive, null, 2);
+      const statusText = `已导出 ${archive.localHumans.length} 个数字人、${archive.chatStates.length} 组聊天记录${hasUserMemory(archive.userMemory) ? "和长期记忆" : ""}。`;
+      this.setData({
+        archiveText: raw,
+        archiveStatus: `${statusText} JSON 已放入下方文本框。`
+      });
+      wx.setClipboardData({
+        data: raw,
+        success: () => {
+          this.setData({ archiveStatus: `${statusText} 已复制到剪贴板。` });
+        },
+        fail: () => {
+          this.setData({ archiveStatus: `${statusText} 剪贴板不可用，请手动复制文本框内容。` });
+        }
+      });
+    } catch {
+      this.setData({ archiveStatus: "导出失败，请稍后重试。" });
+    }
+  },
+
+  _importArchiveFromText(rawText) {
+    const raw = String(rawText || "").trim();
+    if (!raw) {
+      this.setData({ archiveStatus: "请先粘贴导出的 JSON 记录。" });
+      return;
+    }
+
+    try {
+      const result = importMiniArchive(JSON.parse(raw));
+      const sessionId = result.sessionId || wx.getStorageSync(STORAGE_KEY_SESSION) || this.data.sessionId;
+      const selectedCharacterId = result.selectedCharacterId || wx.getStorageSync(STORAGE_KEY_CHARACTER) || this.data.characterId || "lina";
+      const avatarRenderMode = result.avatarRenderMode || readAvatarRenderMode();
+      const userMemory = readUserMemory();
+      this.setData({
+        sessionId,
+        characterId: selectedCharacterId,
+        avatarRenderMode,
+        userMemory,
+        memoryActive: hasUserMemory(userMemory),
+        archiveStatus: `已导入 ${result.humans} 个数字人、${result.chats} 组聊天记录${result.hasMemory ? "和长期记忆" : ""}。`
+      });
+      this._applyCharacterList(getLocalHumans(), selectedCharacterId);
+    } catch (error) {
+      this.setData({
+        archiveStatus: error && error.message ? error.message : "导入失败，请检查 JSON 内容。"
+      });
+    }
+  },
+
+  onImportArchive() {
+    this._importArchiveFromText(this.data.archiveText);
+  },
+
+  onImportArchiveFromClipboard() {
+    wx.getClipboardData({
+      success: (res) => {
+        const raw = String(res.data || "");
+        this.setData({ archiveText: raw });
+        this._importArchiveFromText(raw);
+      },
+      fail: () => {
+        this.setData({ archiveStatus: "读取剪贴板失败，请手动粘贴 JSON。" });
+      }
     });
   },
 

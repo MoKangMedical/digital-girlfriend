@@ -120,6 +120,22 @@
       <view wx:if="{{memoryStatus}}" class="memory-status">{{memoryStatus}}</view>
     </view>
 
+    <view class="archive-card">
+      <view class="archive-title">迁移记录</view>
+      <view class="archive-actions">
+        <button type="default" size="mini" bindtap="onExportArchive">导出到剪贴板</button>
+        <button type="default" size="mini" bindtap="onImportArchiveFromClipboard">从剪贴板导入</button>
+      </view>
+      <textarea
+        class="archive-textarea"
+        value="{{archiveText}}"
+        bindinput="onArchiveTextInput"
+        placeholder="也可以在这里粘贴网页版或小程序导出的 JSON，然后点“导入粘贴内容”。"
+      />
+      <button class="archive-import" type="default" size="mini" bindtap="onImportArchive">导入粘贴内容</button>
+      <view wx:if="{{archiveStatus}}" class="archive-status">{{archiveStatus}}</view>
+    </view>
+
     <picker
       class="selector"
       mode="selector"
