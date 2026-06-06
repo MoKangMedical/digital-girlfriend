@@ -156,6 +156,8 @@ npm run verify:release
 
 访问站点时，若浏览器支持，会出现“安装网页版（可直接进入）”按钮。安装后可像 App 一样从主屏启动。
 
+当前 `sw.js` 会在安装时缓存 app shell、manifest、图标、默认头像、情绪表情以及 Vite 构建后的 hash JS/CSS；页面导航在离线时会回退到 `index.html`。因此已安装的网页版在无网络时仍能打开静态聊天界面，并继续读取本机 `localStorage` 中的数字人、聊天记录和关系状态。远程 `/api/*`、`/audio/*`、`/models/*` 仍保持网络直连，断网时会交给前端静态 fallback 处理。
+
 ## 三端跳转链接（可选）
 
 如你要在网页页头直接放出小程序 / iOS 入口，设置以下环境变量即可：
@@ -174,7 +176,7 @@ VITE_IOS_APP_LINK=https://apps.apple.com/app/你的应用/idxxxx
 VITE_IOS_INSTALL_HINT=当前需 TestFlight 内测，请先加开发者白名单
 ```
 
-说明：当前离线策略采用静态资源优先缓存，`/api/*`、`/audio/*` 仍走网络请求；如需更强离线能力，可继续扩展 `sw.js` 的缓存策略。
+说明：当前离线策略采用 app shell + 静态资源优先缓存，`/api/*`、`/audio/*`、`/models/*` 仍走网络请求；如需真正跨设备同步和远程模型离线缓存，需要接入正式后端和 CDN 缓存策略。
 
 ## 联调验收
 

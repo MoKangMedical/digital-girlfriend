@@ -135,7 +135,23 @@ async function verifyWebInstallAssets() {
     addWarning("manifest 缺少关键字段（name/start_url/icons），建议补齐以提升安装体验。");
   }
 
-  addNote("已发现 Web 端 manifest + service worker（PWA）安装资产。")
+  if (swRaw) {
+    const requiredSwMarkers = [
+      ["cacheAppShell", "service worker 缺少 app shell 预缓存逻辑。"],
+      ["extractShellAssets", "service worker 缺少 Vite hash 静态资源发现逻辑。"],
+      ["networkFirstAppShell", "service worker 缺少导航离线回退逻辑。"],
+      ["request.mode === \"navigate\"", "service worker 未显式处理页面导航请求。"],
+      ["cacheFirst", "service worker 缺少静态资源缓存优先策略。"],
+      ["clients.claim", "service worker 激活后未接管已有客户端。"]
+    ];
+    requiredSwMarkers.forEach(([marker, message]) => {
+      if (!swRaw.includes(marker)) {
+        addBlocker(message);
+      }
+    });
+  }
+
+  addNote("已发现 Web 端 manifest + service worker（PWA）安装资产。");
 
   if (!manifest.icons || manifest.icons.length < 2) {
     addWarning("manifest icons 数量较少，建议补充标准尺寸图标。" );
