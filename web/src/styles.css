@@ -2,6 +2,12 @@
   font-family: Inter, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   background: #0f1322;
@@ -22,12 +28,18 @@ body {
   justify-content: space-between;
 }
 
+.topbar > * {
+  min-width: 0;
+}
+
 .topbar h1 {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .topbar p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .chat-topbar {
@@ -182,6 +194,8 @@ body {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .left,
@@ -189,6 +203,8 @@ body {
   background: #171e31;
   border-radius: 12px;
   padding: 16px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .persona-card label {
@@ -226,6 +242,7 @@ body {
   margin: 8px 0;
   padding: 10px;
   border-radius: 8px;
+  overflow-wrap: anywhere;
 }
 
 .bubble.user {
