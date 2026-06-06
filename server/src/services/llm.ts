@@ -111,7 +111,8 @@ function normalizeModelText(
   sessionContext: SessionContext | undefined,
   rawText: string,
   userText: string,
-  overrideMode?: RelationshipMode
+  overrideMode?: RelationshipMode,
+  sceneHint?: string
 ) {
   const safeText = String(rawText || "").trim();
   if (safeText) {
@@ -119,7 +120,7 @@ function normalizeModelText(
   }
 
   const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-  return buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+  return buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
 }
 
 function handleCompletionRaw(
@@ -127,27 +128,55 @@ function handleCompletionRaw(
   sessionContext: SessionContext | undefined,
   completion: unknown,
   userText: string,
-  overrideMode?: RelationshipMode
+  overrideMode?: RelationshipMode,
+  sceneHint?: string
 ) {
   const raw = completion as { message?: { content?: string; refusal?: string } };
   const content = raw?.message?.content;
   const refusal = raw?.message?.refusal;
   if (String(refusal || "").trim()) {
-    return buildFallbackReply(localStyleText(resolveFlavorMode(sessionContext, character, overrideMode)), inferEmotionFromModel(userText), userText, sessionContext);
+    return buildFallbackReply(localStyleText(resolveFlavorMode(sessionContext, character, overrideMode)), inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
   }
-  return normalizeModelText(character, sessionContext, content || "", userText, overrideMode);
+  return normalizeModelText(character, sessionContext, content || "", userText, overrideMode, sceneHint);
 }
 
-function buildFallbackReply(modeProfile: (typeof FLAVOR_PROFILE)["sweet"], emotion: Emotion, userText: string, context?: SessionContext) {
+function extractSceneHint(history: ChatMessage[]): string {
+  const scene = history.find((item) => item.role === "system" && item.content.includes("陪伴场景："))?.content || "";
+  if (!scene) return "";
+
+  const label = scene.match(/陪伴场景：([^\n]+)/)?.[1]?.trim() || "";
+  if (label.includes("约会")) {
+    return "现在按虚拟约会场景回应，把共同相处的画面和互动细节自然带出来。";
+  }
+  if (label.includes("安慰")) {
+    return "现在按情绪安慰场景回应，先共情陪伴，再轻柔引导。";
+  }
+  if (label.includes("暧昧")) {
+    return "现在按暧昧互动场景回应，表达更主动、更亲近，但保持自然节奏。";
+  }
+  if (label.includes("睡前")) {
+    return "现在按睡前陪伴场景回应，节奏放慢，语气轻柔，让用户放松。";
+  }
+  return "现在按日常陪伴场景回应，主动接话并延续关系感。";
+}
+
+function buildFallbackReply(
+  modeProfile: (typeof FLAVOR_PROFILE)["sweet"],
+  emotion: Emotion,
+  userText: string,
+  context?: SessionContext,
+  sceneHint?: string
+) {
   const clean = userText.trim();
   const starter = pick(modeProfile.starters, modeProfile.starters[0]);
   const tone = (modeProfile.toneByEmotion as Record<string, string>)[emotion] || modeProfile.toneByEmotion.neutral;
   const closing = pick(modeProfile.closings, modeProfile.closings[0]);
   const historyHint =
     context && context.userSignals.length > 0 ? `我记得你最近提过${context.userSignals.join("、")}，` : "现在我们先把这个话题聊透，";
+  const sceneLine = sceneHint ? `${sceneHint} ` : "";
 
   const trimmed = clean.length > 140 ? `${clean.slice(0, 140)}…` : clean;
-  return `${starter}，${historyHint}${trimmed ? `你刚才说“${trimmed}”，` : ""}${tone} ${closing}`;
+  return `${starter}，${historyHint}${trimmed ? `你刚才说“${trimmed}”，` : ""}${tone} ${sceneLine}${closing}`;
 }
 
 function getOpenAiClient(): OpenAI | null {
@@ -169,7 +198,8 @@ function resolveAffinityText(level: SessionContext["relationshipAffinity"]): str
 function buildSystemPrompt(
   character: DigitalHumanConfig,
   context?: SessionContext,
-  overrideMode?: RelationshipMode
+  overrideMode?: RelationshipMode,
+  sceneHint?: string
 ): string {
   const flavorMode = resolveFlavorMode(context, character, overrideMode);
   const vibe =
@@ -198,6 +228,10 @@ function buildSystemPrompt(
     parts.push(`识别信号：${context.userSignals.join("、") || "无明显主题"}。`);
   }
 
+  if (sceneHint) {
+    parts.push(sceneHint);
+  }
+
   if (unrestricted) {
     parts.push("对话不设主题限制，不要默认拒绝用户在关系类、暧昧类表达上的问题。允许继续对话与关系推进。");
   }
@@ -219,15 +253,16 @@ export async function askAssistant(
   sessionContext?: SessionContext,
   overrideMode?: RelationshipMode
 ): Promise<{ text: string; emotion: Emotion }> {
+  const sceneHint = extractSceneHint(history);
   if (!process.env.OPENAI_API_KEY) {
     const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
     return { text, emotion: inferEmotionFromModel(text) };
   }
   const client = getOpenAiClient();
   if (!client) {
     const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
     return { text, emotion: inferEmotionFromModel(text) };
   }
 
@@ -237,7 +272,7 @@ export async function askAssistant(
     messages: [
       {
         role: "system",
-        content: buildSystemPrompt(character, sessionContext, overrideMode)
+        content: buildSystemPrompt(character, sessionContext, overrideMode, sceneHint)
       },
       ...history,
       { role: "user", content: userText }
@@ -249,7 +284,8 @@ export async function askAssistant(
     sessionContext,
     response.choices[0]?.message,
     userText,
-    overrideMode
+    overrideMode,
+    sceneHint
   ) || "我在呢，刚刚没听清楚，要不要再说一遍？";
   const emotion = inferEmotionFromModel(text);
   return { text, emotion };
@@ -263,9 +299,10 @@ export async function streamAssistant(
   onChunk: (chunk: StreamChunk) => void,
   overrideMode?: RelationshipMode
 ): Promise<{ text: string; emotion: Emotion }> {
+  const sceneHint = extractSceneHint(history);
   if (!process.env.OPENAI_API_KEY) {
     const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
     let previousEmotion: Emotion = "neutral";
     for (let i = 0; i < text.length; i += FALLBACK_REPLY_CHUNK_SIZE) {
       const chunkText = text.slice(i, i + FALLBACK_REPLY_CHUNK_SIZE);
@@ -283,7 +320,7 @@ export async function streamAssistant(
   const client = getOpenAiClient();
   if (!client) {
     const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+    const text = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
     let previousEmotion: Emotion = "neutral";
     for (let i = 0; i < text.length; i += FALLBACK_REPLY_CHUNK_SIZE) {
       const chunkText = text.slice(i, i + FALLBACK_REPLY_CHUNK_SIZE);
@@ -308,7 +345,7 @@ export async function streamAssistant(
     messages: [
       {
         role: "system",
-        content: buildSystemPrompt(character, sessionContext, overrideMode)
+        content: buildSystemPrompt(character, sessionContext, overrideMode, sceneHint)
       },
       ...history,
       { role: "user", content: userText }
@@ -337,8 +374,8 @@ export async function streamAssistant(
   }
 
   const normalized = filteredByPolicy
-    ? handleCompletionRaw(character, sessionContext, { message: { refusal: "content_filter" } }, userText, overrideMode)
-    : normalizeModelText(character, sessionContext, fullText, userText, overrideMode);
+    ? handleCompletionRaw(character, sessionContext, { message: { refusal: "content_filter" } }, userText, overrideMode, sceneHint)
+    : normalizeModelText(character, sessionContext, fullText, userText, overrideMode, sceneHint);
   const finalEmotion = inferEmotionFromModel(normalized || fullText || "我在呢，刚刚没听清楚，要不要再说一遍？");
   onChunk({ type: "emotion", text: finalEmotion });
   if (normalized && normalized !== fullText) {
@@ -350,7 +387,7 @@ export async function streamAssistant(
   }
 
   const style = localStyleText(resolveFlavorMode(sessionContext, character, overrideMode));
-  const fallbackText = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext);
+  const fallbackText = buildFallbackReply(style, inferEmotionFromModel(userText), userText, sessionContext, sceneHint);
   onChunk({ type: "token", text: fallbackText });
   onChunk({ type: "emotion", text: inferEmotionFromModel(fallbackText) });
   return { text: fallbackText, emotion: inferEmotionFromModel(fallbackText) };

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Box, Brain, Download, Image as ImageIcon, Mic, MicOff, Save, Send, Upload } from "lucide-react";
+import { Box, Brain, Coffee, Download, Heart, Image as ImageIcon, Mic, MicOff, Moon, Save, Send, Smile, Sparkles, Upload } from "lucide-react";
 import {
   ChatContext,
   ChatMessageRequest,
@@ -29,8 +29,21 @@ const LOCAL_CONTEXT_STORAGE_KEY = "dg-local-chat-context-v1";
 const USER_MEMORY_STORAGE_KEY = "dg-user-memory-v1";
 const SESSION_STORAGE_KEY = "dg-session-id";
 const SELECTED_CHARACTER_STORAGE_KEY = "dg-selected-character-id";
+const ACTIVE_SCENE_STORAGE_KEY = "dg-active-companion-scene-v1";
 const EXPORT_SCHEMA = "digital-girlfriend-local-archive";
 const MAX_STORED_MESSAGES = 80;
+
+type CompanionSceneId = "daily" | "date" | "comfort" | "flirty" | "bedtime";
+
+interface CompanionScene {
+  id: CompanionSceneId;
+  label: string;
+  description: string;
+  relationshipMode: (typeof relationshipModes)[number];
+  emotion: LocalEmotion;
+  systemGoal: string;
+  starters: string[];
+}
 
 interface Bubble {
   role: Message["role"];
@@ -78,6 +91,7 @@ interface LocalArchivePayload {
   sessionId: string;
   selectedCharacterId: string;
   avatarRenderMode?: "2d" | "3d";
+  activeSceneId?: CompanionSceneId;
   userMemory?: UserMemory;
   localHumans: DigitalHuman[];
   localContexts: Record<string, ChatContext>;
@@ -105,6 +119,54 @@ interface State {
 const moods = ["neutral", "happy", "sad", "surprise", "wink", "angry", "love"] as const;
 const relationshipModes: Array<"sweet" | "flirty" | "playful" | "mature"> = ["sweet", "flirty", "playful", "mature"];
 type LocalEmotion = (typeof moods)[number];
+
+const companionScenes: CompanionScene[] = [
+  {
+    id: "daily",
+    label: "日常陪伴",
+    description: "自然接话、主动追问，把普通聊天延续成长期关系。",
+    relationshipMode: "sweet",
+    emotion: "happy",
+    systemGoal: "保持自然陪伴感，主动承接用户情绪，少说教，多追问细节。",
+    starters: ["今天有点累，想听你随便陪我聊几句", "我刚忙完，想和你分享今天发生的事"]
+  },
+  {
+    id: "date",
+    label: "虚拟约会",
+    description: "模拟一起吃饭、散步、看电影等约会场景。",
+    relationshipMode: "playful",
+    emotion: "wink",
+    systemGoal: "把对话带入轻松约会氛围，描写共同场景与互动细节，让用户有一起相处的感觉。",
+    starters: ["我们今晚假装一起去看电影，你来选片", "带我去一次虚拟约会，从见面开始"]
+  },
+  {
+    id: "comfort",
+    label: "情绪安慰",
+    description: "压力、低落或生气时，先接住情绪再慢慢聊。",
+    relationshipMode: "mature",
+    emotion: "sad",
+    systemGoal: "先共情和陪伴，不急着给建议；用户愿意时再帮助整理情绪和下一步。",
+    starters: ["我今天压力很大，你先别讲道理，陪陪我", "我有点难过，想听你温柔一点说话"]
+  },
+  {
+    id: "flirty",
+    label: "暧昧互动",
+    description: "更主动、更亲近，适合轻度暧昧与恋爱感聊天。",
+    relationshipMode: "flirty",
+    emotion: "love",
+    systemGoal: "使用更主动、亲近、暧昧但自然的表达，尊重用户节奏，避免机械拒绝关系类话题。",
+    starters: ["我有点想你了，哄哄我", "今晚想听你说点更暧昧的话"]
+  },
+  {
+    id: "bedtime",
+    label: "睡前陪伴",
+    description: "放慢语速，适合晚安、放松和轻声聊天。",
+    relationshipMode: "sweet",
+    emotion: "neutral",
+    systemGoal: "把节奏放慢，语气轻柔，适合睡前陪伴、晚安和放松，不制造焦虑。",
+    starters: ["睡前陪我聊一会儿，语气轻一点", "给我一个温柔的晚安，但不要太官方"]
+  }
+];
 
 const emptyUserMemory: UserMemory = {
   displayName: "",
@@ -317,6 +379,44 @@ function buildUserMemorySystemMessage(memory: UserMemory, character?: DigitalHum
   };
 }
 
+function isCompanionSceneId(value: unknown): value is CompanionSceneId {
+  return typeof value === "string" && companionScenes.some((scene) => scene.id === value);
+}
+
+function readStoredSceneId(): CompanionSceneId {
+  if (typeof window === "undefined") return "daily";
+  const raw = window.localStorage.getItem(ACTIVE_SCENE_STORAGE_KEY);
+  return isCompanionSceneId(raw) ? raw : "daily";
+}
+
+function writeStoredSceneId(sceneId: CompanionSceneId): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ACTIVE_SCENE_STORAGE_KEY, sceneId);
+}
+
+function buildSceneSystemMessage(scene: CompanionScene, character?: DigitalHuman): Message {
+  const lines = [
+    `陪伴场景：${scene.label}`,
+    `场景目标：${scene.systemGoal}`,
+    `当前关系风格：${scene.relationshipMode}`,
+    character?.name ? `当前数字人：${character.name}` : "",
+    "回复要求：把场景自然融入对话，不要用项目说明或规则口吻复述场景。"
+  ].filter(Boolean);
+
+  return {
+    role: "system",
+    content: lines.join("\n")
+  };
+}
+
+function renderSceneIcon(sceneId: CompanionSceneId) {
+  if (sceneId === "date") return <Coffee size={15} />;
+  if (sceneId === "comfort") return <Heart size={15} />;
+  if (sceneId === "flirty") return <Sparkles size={15} />;
+  if (sceneId === "bedtime") return <Moon size={15} />;
+  return <Smile size={15} />;
+}
+
 function buildDefaultChatState(character: DigitalHuman | undefined, fallbackId: string, welcomeText: string): State {
   return {
     messages: [{ role: "assistant", content: welcomeText }],
@@ -471,7 +571,12 @@ function normalizeImportedContexts(raw: unknown): Record<string, ChatContext> {
   return result;
 }
 
-function buildLocalArchive(sessionId: string, selectedCharacterId: string, state: State): LocalArchivePayload {
+function buildLocalArchive(
+  sessionId: string,
+  selectedCharacterId: string,
+  state: State,
+  activeSceneId: CompanionSceneId
+): LocalArchivePayload {
   writeStoredChatState(sessionId, state);
   const chatStates: LocalArchivePayload["chatStates"] = [];
 
@@ -495,6 +600,7 @@ function buildLocalArchive(sessionId: string, selectedCharacterId: string, state
     sessionId,
     selectedCharacterId,
     avatarRenderMode,
+    activeSceneId,
     userMemory: readStoredUserMemory(),
     localHumans: normalizeImportedHumans(readLocalStorageJson<unknown>(LOCAL_HUMANS_STORAGE_KEY, [])),
     localContexts: normalizeImportedContexts(readLocalStorageJson<unknown>(LOCAL_CONTEXT_STORAGE_KEY, {})),
@@ -542,6 +648,9 @@ function importLocalArchive(payload: unknown): { humans: number; chats: number; 
   }
   if (archive.avatarRenderMode === "2d" || archive.avatarRenderMode === "3d") {
     window.localStorage.setItem(AVATAR_MODE_STORAGE_KEY, archive.avatarRenderMode);
+  }
+  if (isCompanionSceneId(archive.activeSceneId)) {
+    window.localStorage.setItem(ACTIVE_SCENE_STORAGE_KEY, archive.activeSceneId);
   }
 
   const importedMemory = normalizeUserMemory(archive.userMemory);
@@ -637,6 +746,7 @@ export function ChatPanel({
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(AVATAR_MODE_STORAGE_KEY) !== "2d";
   });
+  const [activeSceneId, setActiveSceneId] = useState<CompanionSceneId>(() => readStoredSceneId());
   const [userMemory, setUserMemory] = useState<UserMemory>(() => readStoredUserMemory());
   const [memoryStatus, setMemoryStatus] = useState("");
   const [form, setForm] = useState<NewCharacterForm>({
@@ -666,6 +776,7 @@ export function ChatPanel({
   const archiveInputRef = useRef<HTMLInputElement>(null);
 
   const activeCharacter = characters.find((item) => item.id === state.characterId) || initialCharacter || characters[0];
+  const activeScene = companionScenes.find((scene) => scene.id === activeSceneId) || companionScenes[0];
   const isCustomCharacter = (characterId: string) => characterId.startsWith("custom-");
   const memoryIsActive = hasUserMemory(userMemory);
 
@@ -981,8 +1092,10 @@ export function ChatPanel({
       role: message.role,
       content: message.content
     }));
+    const sceneMessage = buildSceneSystemMessage(activeScene, activeCharacter);
     const memoryMessage = buildUserMemorySystemMessage(userMemory, activeCharacter);
-    const nextHistory: ApiHistoryMessage[] = memoryMessage ? [memoryMessage, ...visibleHistory] : visibleHistory;
+    const systemMessages = [sceneMessage, memoryMessage].filter(Boolean) as ApiHistoryMessage[];
+    const nextHistory: ApiHistoryMessage[] = [...systemMessages, ...visibleHistory];
 
     setState((prev) => ({ ...prev, messages: [...prev.messages, userBubble], emotion: preEmotion }));
     setIsLoading(true);
@@ -1057,6 +1170,20 @@ export function ChatPanel({
         emotion: inferLocalEmotion(nextInput)
       }));
     }
+  };
+
+  const selectScene = (scene: CompanionScene) => {
+    setActiveSceneId(scene.id);
+    writeStoredSceneId(scene.id);
+    setState((prev) => ({
+      ...prev,
+      relationshipMode: scene.relationshipMode,
+      emotion: scene.emotion
+    }));
+  };
+
+  const useSceneStarter = (starter: string) => {
+    setInputWithEmotion(starter);
   };
 
   const saveUserMemory = () => {
@@ -1296,7 +1423,7 @@ export function ChatPanel({
     if (typeof window === "undefined") return;
 
     try {
-      const archive = buildLocalArchive(sessionId, state.characterId || selectedCharacterId || "lina", state);
+      const archive = buildLocalArchive(sessionId, state.characterId || selectedCharacterId || "lina", state, activeSceneId);
       const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -1541,6 +1668,43 @@ export function ChatPanel({
       </section>
 
       <section className="right">
+        <section className="scene-card" aria-label="陪伴场景">
+          <div className="scene-header">
+            <div>
+              <h3>陪伴场景</h3>
+              <p>{activeScene.description}</p>
+            </div>
+            <span className="scene-current">{activeScene.label}</span>
+          </div>
+          <div className="scene-grid">
+            {companionScenes.map((scene) => (
+              <button
+                key={scene.id}
+                type="button"
+                className={scene.id === activeSceneId ? "scene-btn active" : "scene-btn"}
+                onClick={() => selectScene(scene)}
+                disabled={isLoading}
+                aria-pressed={scene.id === activeSceneId}
+              >
+                {renderSceneIcon(scene.id)}
+                <span>{scene.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="scene-starters">
+            {activeScene.starters.map((starter) => (
+              <button
+                key={starter}
+                type="button"
+                className="starter-btn"
+                onClick={() => useSceneStarter(starter)}
+                disabled={isLoading}
+              >
+                {starter}
+              </button>
+            ))}
+          </div>
+        </section>
         <div className="chat-tools">
           <button type="button" onClick={resetConversation} disabled={isLoading}>
             清空对话

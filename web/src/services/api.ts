@@ -416,12 +416,33 @@ function extractLocalMemorySummary(payload: ChatRequest): { preferredName?: stri
   };
 }
 
+function extractLocalSceneHint(payload: ChatRequest): string {
+  const scene = payload.history.find((item) => item.role === "system" && item.content.includes("陪伴场景："))?.content || "";
+  if (!scene) return "";
+
+  const label = scene.match(/陪伴场景：([^\n]+)/)?.[1]?.trim() || "";
+  if (label.includes("约会")) {
+    return "我们就按约会的感觉来，我会把场景带起来，让你像真的和我在一起。";
+  }
+  if (label.includes("安慰")) {
+    return "我先不讲大道理，先把你的情绪接住，再陪你一点点说开。";
+  }
+  if (label.includes("暧昧")) {
+    return "我会更主动一点，也更靠近一点，但节奏还是听你的。";
+  }
+  if (label.includes("睡前")) {
+    return "我把声音放轻一点，陪你慢慢收尾，不让你越聊越紧绷。";
+  }
+  return "我会用更自然的日常陪伴节奏接住这个话题。";
+}
+
 function buildLocalReply(payload: ChatRequest, character: DigitalHuman, emotion: Emotion, context: ChatContext): string {
   const mode = context.activeRelationshipMode || character.relationshipMode || "sweet";
   const line = localModeLine[mode]?.[emotion] || localModeLine.sweet.neutral;
   const clean = payload.message.trim();
   const quoted = clean.length > 120 ? `${clean.slice(0, 120)}...` : clean;
   const localMemory = extractLocalMemorySummary(payload);
+  const sceneHint = extractLocalSceneHint(payload);
   const nameHint = localMemory.preferredName ? `${localMemory.preferredName}，` : character.name ? `${character.name}在听，` : "";
   const memoryHint =
     localMemory.profileHint ||
@@ -433,7 +454,7 @@ function buildLocalReply(payload: ChatRequest, character: DigitalHuman, emotion:
         ? "先把最让你不舒服的那一点告诉我。"
         : "继续说，我会按你的情绪慢慢跟上。";
 
-  return `${nameHint}${quoted ? `你刚才说「${quoted}」，` : ""}${line}${memoryHint}${followUp}`;
+  return `${nameHint}${quoted ? `你刚才说「${quoted}」，` : ""}${line}${sceneHint}${memoryHint}${followUp}`;
 }
 
 function buildLocalChatResponse(payload: ChatRequest): ChatResponse {
