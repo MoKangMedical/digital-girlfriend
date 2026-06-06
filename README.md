@@ -55,6 +55,7 @@ npm run dev
 3. Push 后 `.github/workflows/gh-pages.yml` 会自动执行：
    - `npm run build:web`（即 `npm run build --workspace @dg/web`）
    - 自动上传构建产物并发布到 GitHub Pages（`workflow` 模式）。
+   - workflow 会设置 `VITE_BASE_PATH=/digital-girlfriend/`，保证 GitHub Pages 子目录下的 JS/CSS/图片路径稳定。
    - 构建会同时生成 `404.html`，用于 GitHub Pages 静态站点的 SPA 路由兜底；直接访问或刷新 `/chat` 等子路径不会落到 GitHub 的默认 404 页。
 
 未配置 `VITE_API_URL` 时，GitHub Pages 会自动启用前端本地静态体验：内置数字人可加载，聊天会用本地流式回复，表情、关系状态和浏览器语音播报仍可使用；用户创建的数字人、当前 3D/2D 模式、每个数字人的聊天记录和关系状态会保存在当前浏览器 `localStorage`，刷新后仍可继续使用。配置公网 API 后会优先使用真实后端。
