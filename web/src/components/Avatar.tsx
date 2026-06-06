@@ -46,6 +46,17 @@ const classByEmotion: Record<Emotion, string> = {
   love: "face love"
 };
 
+function canCreateWebGlContext(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    return Boolean(context);
+  } catch {
+    return false;
+  }
+}
+
 function makeStatusText(emotion: Emotion) {
   switch (emotion) {
     case "happy":
@@ -82,7 +93,11 @@ export function Avatar({
   const shouldShowVideo = avatarType === "video";
   const emotionVideo = shouldShowVideo ? resolveMediaUrl(resolveEmotionVideo(avatarVideoProfile, emotion) || undefined) : undefined;
   const [lipBeat, setLipBeat] = useState(false);
-  const canRender3D = typeof window !== "undefined" && "WebGLRenderingContext" in window;
+  const [canRender3D, setCanRender3D] = useState(() => canCreateWebGlContext());
+
+  useEffect(() => {
+    setCanRender3D(canCreateWebGlContext());
+  }, []);
 
   useEffect(() => {
     if (!speaking) {

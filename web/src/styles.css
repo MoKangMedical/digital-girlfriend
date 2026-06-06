@@ -231,6 +231,8 @@ body {
 }
 
 .persona-card select,
+.memory-card input,
+.memory-card textarea,
 .creator input,
 .creator select,
 .creator textarea {
@@ -559,6 +561,68 @@ button:disabled {
 .relationship-card .relationship-summary,
 .relationship-card .relationship-signals {
   color: #d9e6ff;
+}
+
+.memory-card {
+  margin-top: 12px;
+  border-top: 1px solid #2e4066;
+  padding-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.memory-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-title h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.memory-state {
+  margin-left: auto;
+  border: 1px solid #3d5076;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #9fb2d5;
+  font-size: 11px;
+}
+
+.memory-state.active {
+  border-color: #5dd5a7;
+  color: #9ff2ce;
+}
+
+.memory-card label {
+  margin: 2px 0 -2px;
+  color: #dce7ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.memory-card textarea {
+  resize: vertical;
+  min-height: 58px;
+}
+
+.memory-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.secondary-btn {
+  background: #24334f;
+  color: #dce7ff;
+}
+
+.memory-status {
+  margin: 0;
+  color: #9ff2ce;
+  font-size: 12px;
 }
 
 .error {

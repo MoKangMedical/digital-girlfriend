@@ -95,8 +95,12 @@ async function deleteModelFileByName(fileName: string): Promise<boolean> {
 
 function normalizeHistory(history?: ChatMessage[]): ChatMessage[] {
   return (history || [])
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ ...m }));
+    .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+    .map((m) => ({
+      role: m.role,
+      content: String(m.content || "").slice(0, 1200)
+    }))
+    .filter((m) => m.content.trim().length > 0);
 }
 
 function ensureSupportedMood(mood: string | undefined): DigitalHumanConfig["defaultMood"] {

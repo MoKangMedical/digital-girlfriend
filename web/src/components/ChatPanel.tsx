@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Box, Download, Image as ImageIcon, Mic, MicOff, Send, Upload } from "lucide-react";
+import { Box, Brain, Download, Image as ImageIcon, Mic, MicOff, Save, Send, Upload } from "lucide-react";
 import {
   ChatContext,
   ChatMessageRequest,
@@ -26,6 +26,7 @@ const AVATAR_MODE_STORAGE_KEY = "dg-avatar-render-mode";
 const CHAT_STATE_STORAGE_PREFIX = "dg-chat-state-v1";
 const LOCAL_HUMANS_STORAGE_KEY = "dg-local-digital-humans-v1";
 const LOCAL_CONTEXT_STORAGE_KEY = "dg-local-chat-context-v1";
+const USER_MEMORY_STORAGE_KEY = "dg-user-memory-v1";
 const SESSION_STORAGE_KEY = "dg-session-id";
 const SELECTED_CHARACTER_STORAGE_KEY = "dg-selected-character-id";
 const EXPORT_SCHEMA = "digital-girlfriend-local-archive";
@@ -77,9 +78,20 @@ interface LocalArchivePayload {
   sessionId: string;
   selectedCharacterId: string;
   avatarRenderMode?: "2d" | "3d";
+  userMemory?: UserMemory;
   localHumans: DigitalHuman[];
   localContexts: Record<string, ChatContext>;
   chatStates: Array<{ key: string; value: unknown }>;
+}
+
+interface UserMemory {
+  displayName: string;
+  preferredName: string;
+  preferences: string;
+  importantFacts: string;
+  boundaries: string;
+  relationshipNotes: string;
+  updatedAt?: string;
 }
 
 interface State {
@@ -94,6 +106,16 @@ const moods = ["neutral", "happy", "sad", "surprise", "wink", "angry", "love"] a
 const relationshipModes: Array<"sweet" | "flirty" | "playful" | "mature"> = ["sweet", "flirty", "playful", "mature"];
 type LocalEmotion = (typeof moods)[number];
 
+const emptyUserMemory: UserMemory = {
+  displayName: "",
+  preferredName: "",
+  preferences: "",
+  importantFacts: "",
+  boundaries: "",
+  relationshipNotes: "",
+  updatedAt: ""
+};
+
 function isEmotion(value: unknown): value is Emotion {
   return typeof value === "string" && (moods as readonly string[]).includes(value);
 }
@@ -105,7 +127,7 @@ function isRelationshipMode(value: unknown): value is (typeof relationshipModes)
 const localMoodKeywords: Record<LocalEmotion, string[]> = {
   happy: ["开心", "高兴", "好", "棒", "喜欢", "爱", "甜", "nice", "cool", "great", "好笑", "哈哈", "快乐", "开心死了", "太好了"],
   sad: ["难过", "伤心", "失落", "烦", "哭", "sad", "难受", "心碎", "失望"],
-  surprise: ["惊讶", "真的吗", "怎么", "哇", "wow", "天啊", "不可思议", "没想到", "太突然", "惊人"],
+  surprise: ["惊讶", "真的吗", "怎么会", "哇", "wow", "天啊", "不可思议", "没想到", "太突然", "惊人"],
   wink: ["撩", "调皮", "开玩笑", "可爱", "俏皮", "坏", "flirty", "sugar", "小坏蛋"],
   neutral: [],
   angry: ["生气", "烦", "愤怒", "气死", "讨厌", "烦躁", "annoyed", "hate", "讨厌你", "你怎么"],
@@ -220,6 +242,78 @@ function normalizeStoredContext(raw: unknown): ChatContext | undefined {
     lastEmotion: value.lastEmotion,
     turnCount: typeof value.turnCount === "number" ? value.turnCount : 0,
     updatedAt: String(value.updatedAt || "")
+  };
+}
+
+function normalizeMemoryText(value: unknown, maxLength = 360): string {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeUserMemory(raw: unknown): UserMemory {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...emptyUserMemory };
+  }
+
+  const value = raw as Partial<UserMemory>;
+  return {
+    displayName: normalizeMemoryText(value.displayName, 80),
+    preferredName: normalizeMemoryText(value.preferredName, 80),
+    preferences: normalizeMemoryText(value.preferences),
+    importantFacts: normalizeMemoryText(value.importantFacts),
+    boundaries: normalizeMemoryText(value.boundaries),
+    relationshipNotes: normalizeMemoryText(value.relationshipNotes),
+    updatedAt: normalizeMemoryText(value.updatedAt, 60)
+  };
+}
+
+function readStoredUserMemory(): UserMemory {
+  if (typeof window === "undefined") return { ...emptyUserMemory };
+  return normalizeUserMemory(readLocalStorageJson<unknown>(USER_MEMORY_STORAGE_KEY, emptyUserMemory));
+}
+
+function writeStoredUserMemory(memory: UserMemory): UserMemory {
+  const normalized = normalizeUserMemory({
+    ...memory,
+    updatedAt: new Date().toISOString()
+  });
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(USER_MEMORY_STORAGE_KEY, JSON.stringify(normalized));
+  }
+  return normalized;
+}
+
+function hasUserMemory(memory: UserMemory): boolean {
+  return Boolean(
+    memory.displayName ||
+    memory.preferredName ||
+    memory.preferences ||
+    memory.importantFacts ||
+    memory.boundaries ||
+    memory.relationshipNotes
+  );
+}
+
+function buildUserMemorySystemMessage(memory: UserMemory, character?: DigitalHuman): Message | null {
+  const normalized = normalizeUserMemory(memory);
+  if (!hasUserMemory(normalized)) return null;
+
+  const lines = [
+    "长期记忆：以下是用户主动保存给数字人的资料，回答时自然使用，不要逐条复述。",
+    normalized.displayName ? `用户自称：${normalized.displayName}` : "",
+    normalized.preferredName ? `希望数字人称呼用户：${normalized.preferredName}` : "",
+    normalized.preferences ? `聊天偏好：${normalized.preferences}` : "",
+    normalized.importantFacts ? `重要事实：${normalized.importantFacts}` : "",
+    normalized.boundaries ? `聊天禁忌或边界：${normalized.boundaries}` : "",
+    normalized.relationshipNotes ? `关系备注：${normalized.relationshipNotes}` : "",
+    character?.name ? `当前数字人：${character.name}` : ""
+  ].filter(Boolean);
+
+  return {
+    role: "system",
+    content: lines.join("\n")
   };
 }
 
@@ -401,13 +495,14 @@ function buildLocalArchive(sessionId: string, selectedCharacterId: string, state
     sessionId,
     selectedCharacterId,
     avatarRenderMode,
+    userMemory: readStoredUserMemory(),
     localHumans: normalizeImportedHumans(readLocalStorageJson<unknown>(LOCAL_HUMANS_STORAGE_KEY, [])),
     localContexts: normalizeImportedContexts(readLocalStorageJson<unknown>(LOCAL_CONTEXT_STORAGE_KEY, {})),
     chatStates
   };
 }
 
-function importLocalArchive(payload: unknown): { humans: number; chats: number } {
+function importLocalArchive(payload: unknown): { humans: number; chats: number; hasMemory: boolean } {
   if (typeof window === "undefined" || !payload || typeof payload !== "object") {
     throw new Error("导入文件格式不正确");
   }
@@ -449,7 +544,13 @@ function importLocalArchive(payload: unknown): { humans: number; chats: number }
     window.localStorage.setItem(AVATAR_MODE_STORAGE_KEY, archive.avatarRenderMode);
   }
 
-  return { humans: importedHumans.length, chats: importedChatCount };
+  const importedMemory = normalizeUserMemory(archive.userMemory);
+  const hasMemory = hasUserMemory(importedMemory);
+  if (hasMemory) {
+    window.localStorage.setItem(USER_MEMORY_STORAGE_KEY, JSON.stringify(importedMemory));
+  }
+
+  return { humans: importedHumans.length, chats: importedChatCount, hasMemory };
 }
 
 interface NewCharacterForm {
@@ -536,6 +637,8 @@ export function ChatPanel({
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(AVATAR_MODE_STORAGE_KEY) !== "2d";
   });
+  const [userMemory, setUserMemory] = useState<UserMemory>(() => readStoredUserMemory());
+  const [memoryStatus, setMemoryStatus] = useState("");
   const [form, setForm] = useState<NewCharacterForm>({
     name: "",
     description: "",
@@ -564,6 +667,7 @@ export function ChatPanel({
 
   const activeCharacter = characters.find((item) => item.id === state.characterId) || initialCharacter || characters[0];
   const isCustomCharacter = (characterId: string) => characterId.startsWith("custom-");
+  const memoryIsActive = hasUserMemory(userMemory);
 
   useEffect(() => {
     const preferred = characters.find((item) => item.id === selectedCharacterId) || characters[0];
@@ -873,10 +977,12 @@ export function ChatPanel({
 
     const userBubble = { role: "user" as const, content: userMessage };
     const preEmotion = inferLocalEmotion(userMessage);
-    const nextHistory: ApiHistoryMessage[] = [...state.messages, userBubble].map((message) => ({
+    const visibleHistory: ApiHistoryMessage[] = [...state.messages, userBubble].map((message) => ({
       role: message.role,
       content: message.content
     }));
+    const memoryMessage = buildUserMemorySystemMessage(userMemory, activeCharacter);
+    const nextHistory: ApiHistoryMessage[] = memoryMessage ? [memoryMessage, ...visibleHistory] : visibleHistory;
 
     setState((prev) => ({ ...prev, messages: [...prev.messages, userBubble], emotion: preEmotion }));
     setIsLoading(true);
@@ -951,6 +1057,24 @@ export function ChatPanel({
         emotion: inferLocalEmotion(nextInput)
       }));
     }
+  };
+
+  const saveUserMemory = () => {
+    try {
+      const saved = writeStoredUserMemory(userMemory);
+      setUserMemory(saved);
+      setMemoryStatus(hasUserMemory(saved) ? "记忆已保存，会从下一条消息开始生效。" : "记忆已清空。");
+    } catch {
+      setMemoryStatus("保存失败，请检查浏览器本地存储权限。");
+    }
+  };
+
+  const clearUserMemory = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(USER_MEMORY_STORAGE_KEY);
+    }
+    setUserMemory({ ...emptyUserMemory });
+    setMemoryStatus("记忆已清空。");
   };
 
   const resetConversation = async () => {
@@ -1195,7 +1319,7 @@ export function ChatPanel({
     try {
       const raw = await file.text();
       const result = importLocalArchive(JSON.parse(raw));
-      setSpeechError(`已导入 ${result.humans} 个数字人和 ${result.chats} 组聊天记录，正在刷新...`);
+      setSpeechError(`已导入 ${result.humans} 个数字人、${result.chats} 组聊天记录${result.hasMemory ? "和长期记忆" : ""}，正在刷新...`);
       window.setTimeout(() => window.location.reload(), 300);
     } catch (error) {
       setSpeechError(error instanceof Error ? error.message : "导入失败，请检查 JSON 文件");
@@ -1355,6 +1479,64 @@ export function ChatPanel({
           {state.context?.userSignals?.length ? (
             <p className="relationship-signals">关键词：{state.context.userSignals.join("、")}</p>
           ) : null}
+        </section>
+
+        <section className="memory-card">
+          <div className="memory-title">
+            <Brain size={16} />
+            <h3>长期记忆</h3>
+            <span className={memoryIsActive ? "memory-state active" : "memory-state"}>{memoryIsActive ? "已启用" : "未设置"}</span>
+          </div>
+          <label>我是谁</label>
+          <input
+            value={userMemory.displayName}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, displayName: e.target.value }))}
+            placeholder="例如：林，做科研和产品"
+          />
+          <label>希望她怎么称呼我</label>
+          <input
+            value={userMemory.preferredName}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, preferredName: e.target.value }))}
+            placeholder="例如：哥哥 / 阿林 / 亲爱的"
+          />
+          <label>聊天偏好</label>
+          <textarea
+            rows={2}
+            value={userMemory.preferences}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, preferences: e.target.value }))}
+            placeholder="例如：语气自然一点，开心时可以撒娇，压力大时先安慰"
+          />
+          <label>重要事实</label>
+          <textarea
+            rows={2}
+            value={userMemory.importantFacts}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, importantFacts: e.target.value }))}
+            placeholder="例如：最近在做数字女友项目、经常晚上工作"
+          />
+          <label>聊天禁忌或边界</label>
+          <textarea
+            rows={2}
+            value={userMemory.boundaries}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, boundaries: e.target.value }))}
+            placeholder="例如：不要说教；不喜欢机械式客服语气"
+          />
+          <label>关系备注</label>
+          <textarea
+            rows={2}
+            value={userMemory.relationshipNotes}
+            onChange={(e) => setUserMemory((prev) => ({ ...prev, relationshipNotes: e.target.value }))}
+            placeholder="例如：关系节奏偏暧昧、直接、陪伴感强"
+          />
+          <div className="memory-actions">
+            <button type="button" onClick={saveUserMemory}>
+              <Save size={15} />
+              保存记忆
+            </button>
+            <button type="button" className="secondary-btn" onClick={clearUserMemory}>
+              清空
+            </button>
+          </div>
+          {memoryStatus ? <p className="memory-status">{memoryStatus}</p> : null}
         </section>
       </section>
 

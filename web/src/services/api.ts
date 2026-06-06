@@ -152,7 +152,7 @@ const BUILT_IN_HUMANS: DigitalHuman[] = [
 const localEmotionKeywords: Record<Emotion, string[]> = {
   happy: ["开心", "高兴", "喜欢", "棒", "好", "哈哈", "快乐", "great", "nice", "cool"],
   sad: ["难过", "伤心", "失落", "烦", "哭", "心碎", "失望", "sad"],
-  surprise: ["惊讶", "真的吗", "怎么", "哇", "天啊", "不可思议", "wow"],
+  surprise: ["惊讶", "真的吗", "怎么会", "哇", "天啊", "不可思议", "wow"],
   wink: ["撩", "调皮", "开玩笑", "可爱", "坏", "flirty", "暧昧"],
   neutral: [],
   angry: ["生气", "愤怒", "气死", "讨厌", "烦躁", "annoyed", "hate"],
@@ -399,13 +399,33 @@ function buildLocalContext(payload: ChatRequest, emotion: Emotion, character: Di
   };
 }
 
+function extractLocalMemorySummary(payload: ChatRequest): { preferredName?: string; profileHint?: string } {
+  const memory = payload.history.find((item) => item.role === "system" && item.content.includes("长期记忆"))?.content || "";
+  if (!memory) return {};
+
+  const cleanHint = (value?: string) => value?.trim().replace(/[。；;，,\s]+$/g, "");
+  const preferredName = memory.match(/希望数字人称呼用户：([^\n]+)/)?.[1]?.trim();
+  const preferences = cleanHint(memory.match(/聊天偏好：([^\n]+)/)?.[1]);
+  const facts = cleanHint(memory.match(/重要事实：([^\n]+)/)?.[1]);
+  const notes = cleanHint(memory.match(/关系备注：([^\n]+)/)?.[1]);
+  const hintParts = [preferences, facts, notes].filter(Boolean).slice(0, 2);
+
+  return {
+    preferredName,
+    profileHint: hintParts.length ? `我也会记得你说过${hintParts.join("；")}。` : undefined
+  };
+}
+
 function buildLocalReply(payload: ChatRequest, character: DigitalHuman, emotion: Emotion, context: ChatContext): string {
   const mode = context.activeRelationshipMode || character.relationshipMode || "sweet";
   const line = localModeLine[mode]?.[emotion] || localModeLine.sweet.neutral;
   const clean = payload.message.trim();
   const quoted = clean.length > 120 ? `${clean.slice(0, 120)}...` : clean;
-  const nameHint = character.name ? `${character.name}在听，` : "";
-  const memoryHint = context.userSignals.length > 1 ? `我也记得你前面提到过${context.userSignals.slice(0, -1).join("、")}。` : "";
+  const localMemory = extractLocalMemorySummary(payload);
+  const nameHint = localMemory.preferredName ? `${localMemory.preferredName}，` : character.name ? `${character.name}在听，` : "";
+  const memoryHint =
+    localMemory.profileHint ||
+    (context.userSignals.length > 1 ? `我也记得你前面提到过${context.userSignals.slice(0, -1).join("、")}。` : "");
   const followUp =
     emotion === "love" || mode === "flirty"
       ? "你可以继续说得更直接一点，我会顺着你的节奏回应。"
