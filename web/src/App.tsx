@@ -53,12 +53,15 @@ export default function App() {
   const [installed, setInstalled] = useState(false);
   const [showIosInstallHint, setShowIosInstallHint] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === "undefined") return "landing";
+    if (typeof window === "undefined") return "chat";
     const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "landing") {
+      return "landing";
+    }
     if (params.get("view") === "chat" || window.location.pathname === "/chat" || window.location.hash === "#chat") {
       return "chat";
     }
-    return "landing";
+    return "chat";
   });
 
   const wechatMiniLink = import.meta.env.VITE_WECHAT_MINI_LINK || "";
@@ -101,7 +104,7 @@ export default function App() {
     if (nextMode === "chat") {
       url.searchParams.set("view", "chat");
     } else {
-      url.searchParams.delete("view");
+      url.searchParams.set("view", "landing");
     }
     window.history.replaceState({}, "", url.toString());
   };

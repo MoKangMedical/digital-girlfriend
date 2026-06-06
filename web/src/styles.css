@@ -191,6 +191,22 @@ body {
   padding: 16px;
 }
 
+.persona-card label {
+  display: block;
+  margin: 12px 0 6px;
+  color: #dce7ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.persona-card select,
+.creator input,
+.creator select,
+.creator textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .chat-list {
   height: 420px;
   overflow-y: auto;
@@ -201,6 +217,7 @@ body {
 
 .chat-tools {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
   margin-bottom: 8px;
 }
@@ -246,12 +263,20 @@ body {
   font-size: 12px;
 }
 
-input {
+input,
+select,
+textarea {
   background: #111827;
   color: #f3f7ff;
   border: 1px solid #34405e;
   border-radius: 10px;
   padding: 12px;
+  font: inherit;
+  min-width: 0;
+}
+
+select {
+  color-scheme: dark;
 }
 
 button {
@@ -486,12 +511,40 @@ button:disabled {
 
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; }
+  .right { order: -1; }
+  .chat-list {
+    height: min(42vh, 360px);
+    min-height: 260px;
+  }
   .feature-grid { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 640px) {
   .container {
     padding: 14px;
+  }
+
+  .chat-topbar h1 {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .chat-topbar p {
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .chat-tools {
+    justify-content: flex-start;
+  }
+
+  .input-bar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .voice-btn {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .feature-grid {

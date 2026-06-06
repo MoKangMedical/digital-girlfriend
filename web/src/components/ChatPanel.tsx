@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Send } from "lucide-react";
+import { Box, Image as ImageIcon, Mic, MicOff, Send } from "lucide-react";
 import {
   ChatContext,
   ChatMessageRequest,
@@ -21,6 +21,7 @@ import { Avatar } from "./Avatar";
 const PUBLIC_ASSET_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
 const defaultAvatarUrl = `${PUBLIC_ASSET_BASE}assets/avatars/lina.svg`;
 const assetPlaceholderBase = `${PUBLIC_ASSET_BASE}assets`;
+const AVATAR_MODE_STORAGE_KEY = "dg-avatar-render-mode";
 
 interface Bubble {
   role: Message["role"];
@@ -203,6 +204,10 @@ export function ChatPanel({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState("");
+  const [use3D, setUse3D] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(AVATAR_MODE_STORAGE_KEY) !== "2d";
+  });
   const [form, setForm] = useState<NewCharacterForm>({
     name: "",
     description: "",
@@ -771,6 +776,16 @@ export function ChatPanel({
 
   const canUseVoiceInput = speechSupported || mediaRecorderSupported;
 
+  const toggleAvatarMode = () => {
+    setUse3D((current) => {
+      const next = !current;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(AVATAR_MODE_STORAGE_KEY, next ? "3d" : "2d");
+      }
+      return next;
+    });
+  };
+
   const onVoiceButtonClick = () => {
     if (suppressClickAfterHoldRef.current) {
       suppressClickAfterHoldRef.current = false;
@@ -898,7 +913,7 @@ export function ChatPanel({
           emotionProfile={activeCharacter?.emotionProfile}
           avatarType={activeCharacter?.avatarType}
           avatarVideoProfile={activeCharacter?.avatarVideoProfile}
-          use3D
+          use3D={use3D}
         />
 
         <section className="relationship-card">
@@ -920,6 +935,15 @@ export function ChatPanel({
         <div className="chat-tools">
           <button type="button" onClick={resetConversation} disabled={isLoading}>
             清空对话
+          </button>
+          <button
+            type="button"
+            onClick={toggleAvatarMode}
+            title={use3D ? "切换到 2D 头像" : "切换到 3D 数字人"}
+            aria-label={use3D ? "切换到 2D 头像" : "切换到 3D 数字人"}
+          >
+            {use3D ? <Box size={16} /> : <ImageIcon size={16} />}
+            {use3D ? "3D" : "2D"}
           </button>
         </div>
         <div className="chat-list" ref={chatScrollRef}>
