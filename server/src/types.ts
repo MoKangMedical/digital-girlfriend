@@ -28,6 +28,7 @@ export interface DigitalHumanConfig {
   name: string;
   description: string;
   avatarUrl: string;
+  modelUrl?: string;
   emotionProfile?: EmotionProfile;
   avatarType?: AvatarRenderMode;
   avatarVideoProfile?: EmotionProfile;

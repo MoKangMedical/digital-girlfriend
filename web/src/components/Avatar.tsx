@@ -6,6 +6,7 @@ interface AvatarProps {
   emotion: Emotion;
   speaking: boolean;
   avatarUrl: string;
+  modelUrl?: string;
   name?: string;
   emotionProfile?: EmotionProfile;
   avatarType?: "image" | "video";
@@ -68,6 +69,7 @@ export function Avatar({
   emotion,
   speaking,
   avatarUrl,
+  modelUrl,
   name = "数字人",
   emotionProfile,
   avatarType,
@@ -98,14 +100,18 @@ export function Avatar({
     };
   }, [speaking]);
 
+  const isModel3D = Boolean(use3D && canRender3D && modelUrl);
+
   return (
-    <div className={`avatar ${speaking ? "speaking" : ""}`}>
+    <div
+      className={`avatar ${speaking ? "speaking" : ""}`}
+      data-avatar-mode={isModel3D ? "3d-model" : use3D && canRender3D ? "3d-procedural" : "2d"}
+      data-model-url={modelUrl || ""}
+    >
       <div className="avatar-name">{name}</div>
       <div className="headphone">🎧</div>
       {use3D && canRender3D ? (
-        <div className="avatar-3d-shell" aria-hidden="true">
-          <Girlfriend3D emotion={emotion} speaking={speaking} />
-        </div>
+        <Girlfriend3D emotion={emotion} speaking={speaking} modelUrl={resolveMediaUrl(modelUrl)} />
       ) : (
         <>
           <div className="portrait-wrap">

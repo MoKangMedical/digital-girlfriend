@@ -135,6 +135,7 @@ interface NewCharacterForm {
   name: string;
   description: string;
   avatarUrl: string;
+  modelUrl: string;
   voiceProvider: "openai" | "azure" | "local";
   voice: string;
   defaultMood: (typeof moods)[number];
@@ -212,6 +213,7 @@ export function ChatPanel({
     name: "",
     description: "",
     avatarUrl: defaultAvatarUrl,
+    modelUrl: "",
     voiceProvider: "openai",
     voice: "nova",
     defaultMood: "neutral",
@@ -227,6 +229,7 @@ export function ChatPanel({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const modelObjectUrlsRef = useRef<string[]>([]);
   const suppressClickAfterHoldRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -276,6 +279,8 @@ export function ChatPanel({
     return () => {
       stopSpeechRecognition();
       stopMediaRecorder();
+      modelObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      modelObjectUrlsRef.current = [];
     };
   }, []);
 
@@ -677,6 +682,26 @@ export function ChatPanel({
     }
   };
 
+  const handleModelFile = (fileList: FileList | null) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    const isModelFile =
+      file.name.toLowerCase().endsWith(".glb") ||
+      file.name.toLowerCase().endsWith(".gltf") ||
+      file.type === "model/gltf-binary" ||
+      file.type === "model/gltf+json";
+
+    if (!isModelFile) {
+      setSpeechError("请上传 .glb 或 .gltf 模型文件");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    modelObjectUrlsRef.current.push(objectUrl);
+    setSpeechError("");
+    setForm((prev) => ({ ...prev, modelUrl: objectUrl }));
+  };
+
   const create = async (evt: FormEvent) => {
     evt.preventDefault();
     if (isLoading) return;
@@ -687,6 +712,7 @@ export function ChatPanel({
       name: form.name.trim(),
       description: form.description.trim(),
       avatarUrl: form.avatarUrl.trim(),
+      modelUrl: form.modelUrl.trim() || undefined,
       avatarType: form.avatarType,
       voiceProvider: form.voiceProvider,
       voice: form.voice.trim() || "nova",
@@ -718,6 +744,7 @@ export function ChatPanel({
         name: "",
         description: "",
         avatarUrl: defaultAvatarUrl,
+        modelUrl: "",
         voiceProvider: "openai",
         voice: "nova",
         emotionProfile: "{}",
@@ -845,6 +872,19 @@ export function ChatPanel({
             onChange={(e) => setForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
             placeholder="头像地址"
           />
+          <input
+            value={form.modelUrl}
+            onChange={(e) => setForm((prev) => ({ ...prev, modelUrl: e.target.value }))}
+            placeholder="3D模型地址（GLB/GLTF，可选）"
+          />
+          <label className="file-picker">
+            上传 GLB/GLTF 模型
+            <input
+              type="file"
+              accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+              onChange={(e) => handleModelFile(e.currentTarget.files)}
+            />
+          </label>
           <input value={form.voice} onChange={(e) => setForm((prev) => ({ ...prev, voice: e.target.value }))} placeholder="声音 ID（例如 alloy/nova）" />
           <select
             value={form.voiceProvider}
@@ -909,6 +949,7 @@ export function ChatPanel({
           emotion={state.emotion}
           speaking={speaking}
           avatarUrl={activeCharacter?.avatarUrl || defaultAvatarUrl}
+          modelUrl={activeCharacter?.modelUrl}
           name={activeCharacter?.name || "数字人"}
           emotionProfile={activeCharacter?.emotionProfile}
           avatarType={activeCharacter?.avatarType}

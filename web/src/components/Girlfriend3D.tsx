@@ -1,11 +1,13 @@
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Emotion } from "../services/api";
 
 interface Girlfriend3DProps {
   emotion: Emotion;
   speaking: boolean;
+  modelUrl?: string;
 }
 
 interface EmotionBlend {
@@ -25,6 +27,159 @@ const EMOTION_PRESET: Record<Emotion, EmotionBlend> = {
   angry: { smile: 0.65, eyeOpen: 0.72, browTilt: 0.22, headLift: -0.02, chestBounce: 0.01 },
   love: { smile: 1.3, eyeOpen: 1.05, browTilt: -0.12, headLift: 0.03, chestBounce: 0.04 }
 };
+
+function cloneScene(source: THREE.Object3D): THREE.Group {
+  const clone = source.clone(true) as THREE.Group;
+  const skinnedMeshes: THREE.SkinnedMesh[] = [];
+  const cloneSkinnedMeshes: THREE.SkinnedMesh[] = [];
+  const cloneBones: THREE.Bone[] = [];
+  const boneMap = new Map<string, THREE.Bone>();
+
+  source.traverse((node) => {
+    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
+      skinnedMeshes.push(node as THREE.SkinnedMesh);
+    }
+  });
+  clone.traverse((node) => {
+    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
+      cloneSkinnedMeshes.push(node as THREE.SkinnedMesh);
+    }
+    if ((node as THREE.Bone).isBone) {
+      cloneBones.push(node as THREE.Bone);
+    }
+  });
+  cloneBones.forEach((bone) => boneMap.set(bone.name, bone));
+  cloneSkinnedMeshes.forEach((mesh, index) => {
+    const sourceMesh = skinnedMeshes[index];
+    if (!sourceMesh?.skeleton) return;
+    const orderedBones = sourceMesh.skeleton.bones.map((bone) => boneMap.get(bone.name)).filter(Boolean) as THREE.Bone[];
+    if (orderedBones.length) {
+      mesh.bind(new THREE.Skeleton(orderedBones, sourceMesh.skeleton.boneInverses), mesh.matrixWorld);
+    }
+  });
+
+  return clone;
+}
+
+function normalizeModelScene(scene: THREE.Group): THREE.Group {
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxAxis = Math.max(size.x, size.y, size.z, 0.001);
+  const scale = 1.75 / maxAxis;
+  scene.position.sub(center);
+  scene.scale.setScalar(scale);
+  scene.position.y -= 0.15;
+
+  scene.traverse((node) => {
+    if ((node as THREE.Mesh).isMesh) {
+      const mesh = node as THREE.Mesh;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+    }
+  });
+
+  return scene;
+}
+
+function setMorphInfluence(scene: THREE.Object3D, matchers: string[], value: number) {
+  scene.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.morphTargetDictionary || !mesh.morphTargetInfluences) {
+      return;
+    }
+    Object.entries(mesh.morphTargetDictionary).forEach(([name, index]) => {
+      const normalized = name.toLowerCase();
+      if (matchers.some((matcher) => normalized.includes(matcher))) {
+        mesh.morphTargetInfluences![index] = THREE.MathUtils.lerp(mesh.morphTargetInfluences![index] || 0, value, 0.12);
+      }
+    });
+  });
+}
+
+function applyModelEmotion(scene: THREE.Object3D, emotion: Emotion, speaking: boolean, elapsed: number) {
+  const smile = emotion === "happy" || emotion === "love" ? 0.75 : emotion === "wink" ? 0.45 : 0;
+  const sad = emotion === "sad" ? 0.7 : 0;
+  const angry = emotion === "angry" ? 0.7 : 0;
+  const surprise = emotion === "surprise" ? 0.72 : 0;
+  const blink = emotion === "wink" ? 0.65 : Math.max(0, Math.sin(elapsed * 0.8) > 0.985 ? 0.8 : 0);
+  const mouth = speaking ? 0.35 + Math.max(0, Math.sin(elapsed * 18)) * 0.2 : emotion === "love" ? 0.08 : 0;
+
+  setMorphInfluence(scene, ["smile", "happy", "joy", "mouthhappy"], smile);
+  setMorphInfluence(scene, ["sad", "frown", "sorrow"], sad);
+  setMorphInfluence(scene, ["angry", "anger"], angry);
+  setMorphInfluence(scene, ["surprise", "surprised", "aa", "oh"], Math.max(surprise, mouth));
+  setMorphInfluence(scene, ["blink", "wink", "eyeclose"], blink);
+  setMorphInfluence(scene, ["mouthopen", "jawopen", "viseme", "aa"], mouth);
+}
+
+function ModelBody({ modelUrl, emotion, speaking }: { modelUrl: string; emotion: Emotion; speaking: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const [model, setModel] = useState<THREE.Group | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setModel(null);
+    setFailed(false);
+    mixerRef.current = null;
+
+    const loader = new GLTFLoader();
+    loader.load(
+      modelUrl,
+      (gltf) => {
+        if (!active) return;
+        const scene = normalizeModelScene(cloneScene(gltf.scene));
+        if (gltf.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(scene);
+          const action = mixer.clipAction(gltf.animations[0]);
+          action.play();
+          mixerRef.current = mixer;
+        }
+        setModel(scene);
+      },
+      undefined,
+      () => {
+        if (active) setFailed(true);
+      }
+    );
+
+    return () => {
+      active = false;
+      mixerRef.current?.stopAllAction();
+      mixerRef.current = null;
+    };
+  }, [modelUrl]);
+
+  useFrame((state, delta) => {
+    mixerRef.current?.update(delta);
+    if (!groupRef.current || !model) return;
+
+    const preset = EMOTION_PRESET[emotion];
+    const elapsed = state.clock.getElapsedTime();
+    const breath = Math.sin(elapsed * 1.6) * 0.015;
+    const speakingPulse = speaking ? Math.sin(elapsed * 12) * 0.035 : 0;
+    groupRef.current.rotation.y = Math.sin(elapsed * 0.55) * 0.08;
+    groupRef.current.rotation.x = preset.browTilt * 0.18 + speakingPulse;
+    groupRef.current.position.y = -0.25 + preset.headLift + breath + (speaking ? 0.035 : 0);
+    groupRef.current.scale.setScalar(1 + preset.chestBounce * 0.9 + (speaking ? 0.012 : 0));
+    applyModelEmotion(model, emotion, speaking, elapsed);
+  });
+
+  if (failed) {
+    return <GirlBody emotion={emotion} speaking={speaking} />;
+  }
+
+  return (
+    <group ref={groupRef} position={[0, -0.25, 0]}>
+      {model ? <primitive object={model} /> : <GirlBody emotion="neutral" speaking={false} />}
+    </group>
+  );
+}
 
 function GirlBody({ emotion, speaking }: { emotion: Emotion; speaking: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -164,7 +319,7 @@ function GirlBody({ emotion, speaking }: { emotion: Emotion; speaking: boolean }
   );
 }
 
-export function Girlfriend3D({ emotion, speaking }: Girlfriend3DProps) {
+export function Girlfriend3D({ emotion, speaking, modelUrl }: Girlfriend3DProps) {
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio;
 
   return (
@@ -174,7 +329,7 @@ export function Girlfriend3D({ emotion, speaking }: Girlfriend3DProps) {
         <directionalLight castShadow position={[3, 5, 4]} intensity={1.2} color="#ffd6e7" />
         <directionalLight position={[-2, 2, -2]} intensity={0.35} color="#7ea8ff" />
         <spotLight position={[-4, 4, 2]} angle={0.38} penumbra={0.7} intensity={0.35} color="#ffffff" />
-        <GirlBody emotion={emotion} speaking={speaking} />
+        {modelUrl ? <ModelBody modelUrl={modelUrl} emotion={emotion} speaking={speaking} /> : <GirlBody emotion={emotion} speaking={speaking} />}
       </Canvas>
     </div>
   );

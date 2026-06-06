@@ -12,6 +12,7 @@
 - 文本回复可选 TTS 语音回放（有 OPENAI_API_KEY 时）
 - Web 端支持语音输入（麦克风）与语音回放联动
 - 数字人创建与切换（头像/默认情绪同步显示）
+- Web 端支持 GLB/GLTF 3D 模型地址与本地上传，聊天情绪会继续驱动 3D 外层动作
 - Web / 小程序 / iOS 的同一会话与数字人配置使用同一套 API
 - 支持数字人实时表情图/视频映射（`avatarType=video`）
 
@@ -214,7 +215,7 @@ npm run verify:digital-human-loop
 ## API 概览
 
 ### `GET /api/digital-humans`
-返回可用数字人列表（`id / name / description / avatarUrl / emotionProfile / avatarType / avatarVideoProfile / voiceProfile / defaultMood`）。
+返回可用数字人列表（`id / name / description / avatarUrl / modelUrl / emotionProfile / avatarType / avatarVideoProfile / voiceProfile / defaultMood`）。
 
 ### `POST /api/digital-humans`
 创建自定义数字人（开发态持久化到 `server/src/data/custom-humans.json`）：
@@ -224,6 +225,7 @@ npm run verify:digital-human-loop
   "name": "Lina 2",
   "description": "活泼甜美",
   "avatarUrl": "/assets/avatars/lina2.png",
+  "modelUrl": "https://your-cdn/models/lina.glb",
   "voice": "nova",
   "personalityTagline": "轻松甜蜜，但不失礼貌。",
   "relationshipMode": "sweet",
@@ -244,6 +246,7 @@ npm run verify:digital-human-loop
 - `avatarType`：`image`（默认）或 `video`
 - `avatarType=image` 时读取 `emotionProfile`（情绪图）
 - `avatarType=video` 时读取 `avatarVideoProfile`（情绪视频）
+- `modelUrl`：可选 GLB/GLTF 模型地址；Web 端开启 3D 模式时优先加载该模型，未配置或加载失败会回退到内置程序化 3D 形象
 - `personalityTagline`：补充角色人设偏好
 - `relationshipMode`：关系风格，可填 `sweet`、`flirty`、`playful`、`mature`
 
@@ -320,18 +323,19 @@ SSE 流式接口，返回事件：
 
 后端转写目前使用 OpenAI Whisper（`OPENAI_API_KEY` 未配置时返回错误）。
 
-## 真实 3D 数字人和高质量语音（后续接入）
+## 真实 3D 数字人和高质量语音
 
-当前版本支持两种形象方式：
+当前版本支持多种形象方式：
 
-- 默认采用头像 + 表情文本占位符（`( •ᴗ• )`）演示；
+- 默认采用头像 + 情绪表情图；
 - 可选 `emotionProfile`（JSON 映射）为不同情绪配置独立图片，服务端和端侧将按实时情绪事件切换形象；
 - 新增 `avatarVideoProfile` 后可在 `avatarType=video` 下按情绪播放视频，替代静态图层。
+- Web 端可在创建数字人时填写 `modelUrl` 或上传本地 GLB/GLTF 模型；3D/2D 开关开启 3D 时会优先加载该模型，聊天情绪会复用同一套 3D 外层动作。
 - 项目已内置 `/assets/expressions/{emotion}.svg`（happy / sad / surprise / wink / neutral / angry / love）用于默认数字人的情绪图形化显示。
 
 可在 `web/src/components/Avatar.tsx` 与 `web/src/components/ChatPanel.tsx`、`server/src/services/tts.ts`
 替换为：
-- 3D/Live2D 或视频数字人渲染组件
+- 更完整的 VRM/Live2D 数字人渲染组件
 - 第三方数字人合成/播报服务（如 D-ID、HeyGen、Azure Speech）
 - 真实口型同步（WebRTC/Lip-sync）
 
@@ -364,7 +368,7 @@ SSE 流式接口，返回事件：
 - 当前语音链路：
   - 后端有 `OPENAI_API_KEY`：返回 `/audio/xxx.mp3`，网站端会通过音频标签播放。
   - 后端无 `OPENAI_API_KEY`：网站端自动回退为浏览器语音合成（Web Speech）。
-- 当前形象链路为 2D 表情切图（头像 + 可变表情），可以替换为 Live2D/3D 引擎或第三方数字人 SDK。
+- 当前形象链路包括 2D 表情切图、情绪视频和 Web 端 GLB/GLTF 3D 模型；后续可替换为完整 VRM/Live2D 引擎或第三方数字人 SDK。
 
 ## iOS 打包（Capacitor）
 

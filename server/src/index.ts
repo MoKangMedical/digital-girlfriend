@@ -147,6 +147,7 @@ app.post("/api/digital-humans", async (req, res) => {
       name,
       description,
       avatarUrl,
+      modelUrl,
       voice,
       voiceProvider,
       defaultMood,
@@ -159,6 +160,7 @@ app.post("/api/digital-humans", async (req, res) => {
       name?: string;
       description?: string;
       avatarUrl?: string;
+      modelUrl?: string;
       voice?: string;
       voiceProvider?: "openai" | "azure" | "local";
       defaultMood?: DigitalHumanConfig["defaultMood"];
@@ -179,6 +181,7 @@ app.post("/api/digital-humans", async (req, res) => {
       name,
       description,
       avatarUrl,
+      modelUrl: String(modelUrl || "").trim() || undefined,
       personalityTagline: personalityTagline?.trim() || undefined,
       emotionProfile: normalizeExpressionProfile(emotionProfile),
       avatarType: normalizeAvatarType(avatarType),

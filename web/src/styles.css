@@ -495,6 +495,25 @@ button:disabled {
   padding: 10px;
 }
 
+.file-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed #3e5278;
+  border-radius: 10px;
+  background: #111827;
+  color: #c9deff;
+  font-size: 13px;
+}
+
+.file-picker input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #dbe9ff;
+}
+
 .creator h3 {
   margin: 0 0 6px;
   font-size: 16px;

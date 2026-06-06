@@ -61,6 +61,7 @@ export interface DigitalHuman {
   name: string;
   description: string;
   avatarUrl: string;
+  modelUrl?: string;
   emotionProfile?: EmotionProfile;
   avatarType?: "image" | "video";
   avatarVideoProfile?: EmotionProfile;
@@ -74,6 +75,7 @@ export interface CreateHumanRequest {
   name: string;
   description: string;
   avatarUrl: string;
+  modelUrl?: string;
   avatarType?: "image" | "video";
   voiceProvider?: "openai" | "azure" | "local";
   voice: string;
@@ -472,6 +474,7 @@ export async function createDigitalHuman(payload: CreateHumanRequest) {
       name: payload.name,
       description: payload.description,
       avatarUrl: payload.avatarUrl,
+      modelUrl: payload.modelUrl,
       avatarType: payload.avatarType || "image",
       emotionProfile: payload.emotionProfile,
       avatarVideoProfile: payload.avatarVideoProfile,
