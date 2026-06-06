@@ -3,6 +3,7 @@ const STORAGE_KEY_CHARACTER = "dg-mini-character-id";
 const STORAGE_KEY_LOCAL_HUMANS = "dg-mini-local-digital-humans-v1";
 const STORAGE_KEY_LOCAL_CONTEXT = "dg-mini-local-chat-context-v1";
 const STORAGE_KEY_AVATAR_RENDER_MODE = "dg-mini-avatar-render-mode";
+const STORAGE_KEY_USER_MEMORY = "dg-mini-user-memory-v1";
 
 const expressionMap = {
   happy: "(^_^)",
@@ -35,6 +36,15 @@ const emotionModes = ["neutral", "happy", "sad", "surprise", "wink", "angry", "l
 const relationshipModes = ["sweet", "flirty", "playful", "mature"];
 const voiceProviders = ["openai", "azure", "local"];
 const avatarTypes = ["image", "video"];
+const emptyUserMemory = {
+  displayName: "",
+  preferredName: "",
+  preferences: "",
+  importantFacts: "",
+  boundaries: "",
+  relationshipNotes: "",
+  updatedAt: ""
+};
 
 const BUILT_IN_HUMANS = [
   {
@@ -196,7 +206,7 @@ function readAvatarRenderMode() {
 const localMoodKeywords = {
   happy: ["开心", "高兴", "开森", "棒", "喜欢", "爱", "甜", "nice", "great", "好笑", "哈哈", "开心死了", "太好了"],
   sad: ["难过", "伤心", "失落", "烦", "哭", "sad", "难受", "心碎", "失望"],
-  surprise: ["惊讶", "真的吗", "怎么", "哇", "wow", "不可思议", "没想到", "太突然", "惊人"],
+  surprise: ["惊讶", "真的吗", "怎么会", "哇", "wow", "不可思议", "没想到", "太突然", "惊人"],
   wink: ["撩", "调皮", "开玩笑", "可爱", "俏皮", "坏", "flirty", "小坏蛋", "撒娇"],
   neutral: [],
   angry: ["生气", "烦", "愤怒", "气死", "讨厌", "烦躁", "annoyed", "hate", "你怎么"],
@@ -251,6 +261,77 @@ function writeStorageJson(key, value) {
   } catch {
     // Storage can fail in restricted preview contexts.
   }
+}
+
+function normalizeMemoryText(value, maxLength) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength || 360);
+}
+
+function normalizeUserMemory(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ...emptyUserMemory };
+  }
+
+  return {
+    displayName: normalizeMemoryText(raw.displayName, 80),
+    preferredName: normalizeMemoryText(raw.preferredName, 80),
+    preferences: normalizeMemoryText(raw.preferences, 360),
+    importantFacts: normalizeMemoryText(raw.importantFacts, 360),
+    boundaries: normalizeMemoryText(raw.boundaries, 360),
+    relationshipNotes: normalizeMemoryText(raw.relationshipNotes, 360),
+    updatedAt: normalizeMemoryText(raw.updatedAt, 60)
+  };
+}
+
+function readUserMemory() {
+  return normalizeUserMemory(readStorageJson(STORAGE_KEY_USER_MEMORY, emptyUserMemory));
+}
+
+function writeUserMemory(memory) {
+  const normalized = normalizeUserMemory({
+    ...memory,
+    updatedAt: new Date().toISOString()
+  });
+  writeStorageJson(STORAGE_KEY_USER_MEMORY, normalized);
+  return normalized;
+}
+
+function hasUserMemory(memory) {
+  const normalized = normalizeUserMemory(memory);
+  return Boolean(
+    normalized.displayName ||
+    normalized.preferredName ||
+    normalized.preferences ||
+    normalized.importantFacts ||
+    normalized.boundaries ||
+    normalized.relationshipNotes
+  );
+}
+
+function buildUserMemorySystemMessage(memory, character) {
+  const normalized = normalizeUserMemory(memory);
+  if (!hasUserMemory(normalized)) {
+    return null;
+  }
+
+  const lines = [
+    "长期记忆：以下是用户主动保存给数字人的资料，回答时自然使用，不要逐条复述。",
+    normalized.displayName ? `用户自称：${normalized.displayName}` : "",
+    normalized.preferredName ? `希望数字人称呼用户：${normalized.preferredName}` : "",
+    normalized.preferences ? `聊天偏好：${normalized.preferences}` : "",
+    normalized.importantFacts ? `重要事实：${normalized.importantFacts}` : "",
+    normalized.boundaries ? `聊天禁忌或边界：${normalized.boundaries}` : "",
+    normalized.relationshipNotes ? `关系备注：${normalized.relationshipNotes}` : "",
+    character?.name ? `当前数字人：${character.name}` : ""
+  ].filter(Boolean);
+
+  return {
+    role: "system",
+    content: lines.join("\n")
+  };
 }
 
 function getLocalCustomHumans() {
@@ -357,13 +438,34 @@ function buildLocalContext(payload, emotion, character) {
   };
 }
 
+function extractLocalMemorySummary(payload) {
+  const history = Array.isArray(payload.history) ? payload.history : [];
+  const memory = history.find((item) => item.role === "system" && String(item.content || "").includes("长期记忆"))?.content || "";
+  if (!memory) return {};
+
+  const cleanHint = (value) => String(value || "").trim().replace(/[。；;，,\s]+$/g, "");
+  const preferredName = String((memory.match(/希望数字人称呼用户：([^\n]+)/) || [])[1] || "").trim();
+  const preferences = cleanHint((memory.match(/聊天偏好：([^\n]+)/) || [])[1]);
+  const facts = cleanHint((memory.match(/重要事实：([^\n]+)/) || [])[1]);
+  const notes = cleanHint((memory.match(/关系备注：([^\n]+)/) || [])[1]);
+  const hintParts = [preferences, facts, notes].filter(Boolean).slice(0, 2);
+
+  return {
+    preferredName,
+    profileHint: hintParts.length ? `我也会记得你说过${hintParts.join("；")}。` : ""
+  };
+}
+
 function buildLocalReply(payload, character, emotion, context) {
   const mode = context.activeRelationshipMode || character.relationshipMode || "sweet";
   const line = localModeLine[mode]?.[emotion] || localModeLine.sweet.neutral;
   const clean = String(payload.message || "").trim();
   const quoted = clean.length > 120 ? `${clean.slice(0, 120)}...` : clean;
-  const nameHint = character.name ? `${character.name}在听，` : "";
-  const memoryHint = context.userSignals.length > 1 ? `我也记得你前面提到过${context.userSignals.slice(0, -1).join("、")}。` : "";
+  const localMemory = extractLocalMemorySummary(payload);
+  const nameHint = localMemory.preferredName ? `${localMemory.preferredName}，` : character.name ? `${character.name}在听，` : "";
+  const memoryHint =
+    localMemory.profileHint ||
+    (context.userSignals.length > 1 ? `我也记得你前面提到过${context.userSignals.slice(0, -1).join("、")}。` : "");
   const followUp =
     emotion === "love" || mode === "flirty"
       ? "你可以继续说得更直接一点，我会顺着你的节奏回应。"
@@ -598,6 +700,9 @@ Page({
     avatarRenderMode: "3d",
     avatarRenderStatus: "3D模型未配置，显示2D表情",
     conversationRelationshipMode: "sweet",
+    userMemory: { ...emptyUserMemory },
+    memoryActive: false,
+    memoryStatus: "",
     speaking: false,
     lipPhase: 0,
     newHuman: {
@@ -639,10 +744,13 @@ Page({
 
     const cachedCharacter = wx.getStorageSync(STORAGE_KEY_CHARACTER);
     const cachedAvatarRenderMode = readAvatarRenderMode();
+    const userMemory = readUserMemory();
     this.setData({
       sessionId,
       characterId: cachedCharacter || "lina",
-      avatarRenderMode: cachedAvatarRenderMode
+      avatarRenderMode: cachedAvatarRenderMode,
+      userMemory,
+      memoryActive: hasUserMemory(userMemory)
     });
     this._recorderManager = wx.getRecorderManager();
     this._fileSystemManager = wx.getFileSystemManager();
@@ -1041,14 +1149,58 @@ Page({
       this._revealTimer = null;
     }
 
+    const memoryMessage = buildUserMemorySystemMessage(this.data.userMemory, getActiveCharacter(this));
+    const requestHistory = memoryMessage ? [memoryMessage, ...nextMessages] : nextMessages;
     const parsed = buildLocalParsedChat({
       sessionId: this.data.sessionId,
       characterId: this.data.characterId,
       message: userText,
       relationshipMode: this.data.conversationRelationshipMode || "sweet",
-      history: nextMessages
+      history: requestHistory
     });
     this._renderParsedChat(parsed, nextMessages, assistantBase, assistantIndex);
+  },
+
+  onMemoryInput(e) {
+    const key = e.currentTarget.dataset.field;
+    const value = e.detail.value;
+    if (!key) return;
+
+    const userMemory = {
+      ...this.data.userMemory,
+      [key]: value
+    };
+    this.setData({
+      userMemory,
+      memoryActive: hasUserMemory(userMemory),
+      memoryStatus: ""
+    });
+  },
+
+  onSaveUserMemory() {
+    try {
+      const saved = writeUserMemory(this.data.userMemory);
+      this.setData({
+        userMemory: saved,
+        memoryActive: hasUserMemory(saved),
+        memoryStatus: hasUserMemory(saved) ? "记忆已保存，会从下一条消息开始生效。" : "记忆已清空。"
+      });
+    } catch {
+      this.setData({ memoryStatus: "保存失败，请检查小程序本地存储权限。" });
+    }
+  },
+
+  onClearUserMemory() {
+    try {
+      wx.removeStorageSync(STORAGE_KEY_USER_MEMORY);
+    } catch {
+      // ignore storage clear failures
+    }
+    this.setData({
+      userMemory: { ...emptyUserMemory },
+      memoryActive: false,
+      memoryStatus: "记忆已清空。"
+    });
   },
 
   sendTextMessage(text) {
@@ -1064,6 +1216,8 @@ Page({
     }
 
     const nextMessages = [...this.data.messages, { role: "user", content: userText }];
+    const memoryMessage = buildUserMemorySystemMessage(this.data.userMemory, getActiveCharacter(this));
+    const requestHistory = memoryMessage ? [memoryMessage, ...nextMessages] : nextMessages;
     const assistantIndex = nextMessages.length;
     const emotionByInput = inferLocalEmotion(userText);
     const assistantBase = { role: "assistant", content: "" };
@@ -1094,7 +1248,7 @@ Page({
         characterId: this.data.characterId,
         message: userText,
         relationshipMode: this.data.conversationRelationshipMode || "sweet",
-        history: nextMessages
+        history: requestHistory
       },
       success: (res) => {
         if (typeof res.statusCode === "number" && (res.statusCode < 200 || res.statusCode >= 300)) {

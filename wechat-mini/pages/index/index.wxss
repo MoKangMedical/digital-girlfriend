@@ -71,6 +71,84 @@
   border: 1px solid #2f456d;
 }
 
+.memory-card {
+  margin: 10px auto 8px;
+  padding: 10px;
+  max-width: 660rpx;
+  border: 1px solid #2f456d;
+  border-radius: 10px;
+  background: rgba(17, 27, 46, 0.9);
+  text-align: left;
+}
+
+.memory-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  color: #f4f7ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.memory-state {
+  margin-left: auto;
+  border: 1px solid #3d5076;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #9fb2d5;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.memory-state.active {
+  border-color: #5dd5a7;
+  color: #9ff2ce;
+}
+
+.memory-card input,
+.memory-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 8px;
+  border: 1px solid #314067;
+  border-radius: 8px;
+  background: #0f1726;
+  color: #f4f7ff;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.memory-textarea {
+  min-height: 58px;
+}
+
+.memory-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.memory-actions button {
+  color: #f4f7ff;
+  background: #23456e;
+}
+
+.memory-actions button::after {
+  border: 0;
+}
+
+.memory-clear {
+  background: #24334f !important;
+}
+
+.memory-status {
+  margin-top: 8px;
+  color: #9ff2ce;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .render-row {
   display: flex;
   align-items: center;

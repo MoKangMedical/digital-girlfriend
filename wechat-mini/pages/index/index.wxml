@@ -68,6 +68,58 @@
     <view wx:if="{{relationshipSummary}}" class="relation-summary">{{relationshipSummary}}</view>
     <view wx:if="{{relationshipSignals}}" class="relation-summary">关键词：{{relationshipSignals}}</view>
 
+    <view class="memory-card">
+      <view class="memory-title">
+        <text>长期记忆</text>
+        <text class="memory-state {{memoryActive ? 'active' : ''}}">{{memoryActive ? "已启用" : "未设置"}}</text>
+      </view>
+      <input
+        value="{{userMemory.displayName}}"
+        data-field="displayName"
+        bindinput="onMemoryInput"
+        placeholder="我是谁，例如：林，做科研和产品"
+      />
+      <input
+        value="{{userMemory.preferredName}}"
+        data-field="preferredName"
+        bindinput="onMemoryInput"
+        placeholder="希望她怎么称呼我，例如：阿林"
+      />
+      <textarea
+        class="memory-textarea"
+        value="{{userMemory.preferences}}"
+        data-field="preferences"
+        bindinput="onMemoryInput"
+        placeholder="聊天偏好，例如：语气自然一点，开心时可以撒娇"
+      />
+      <textarea
+        class="memory-textarea"
+        value="{{userMemory.importantFacts}}"
+        data-field="importantFacts"
+        bindinput="onMemoryInput"
+        placeholder="重要事实，例如：最近在做数字女友网站"
+      />
+      <textarea
+        class="memory-textarea"
+        value="{{userMemory.boundaries}}"
+        data-field="boundaries"
+        bindinput="onMemoryInput"
+        placeholder="聊天禁忌或边界，例如：不要说教，不要像客服"
+      />
+      <textarea
+        class="memory-textarea"
+        value="{{userMemory.relationshipNotes}}"
+        data-field="relationshipNotes"
+        bindinput="onMemoryInput"
+        placeholder="关系备注，例如：暧昧、直接、陪伴感强"
+      />
+      <view class="memory-actions">
+        <button type="default" size="mini" bindtap="onSaveUserMemory">保存记忆</button>
+        <button type="default" size="mini" class="memory-clear" bindtap="onClearUserMemory">清空</button>
+      </view>
+      <view wx:if="{{memoryStatus}}" class="memory-status">{{memoryStatus}}</view>
+    </view>
+
     <picker
       class="selector"
       mode="selector"
