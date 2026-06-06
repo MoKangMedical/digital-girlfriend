@@ -56,6 +56,14 @@ export interface TranscribeResponse {
   text: string;
 }
 
+export interface ModelUploadResponse {
+  modelUrl: string;
+  fileName: string;
+  mimeType?: string;
+  size: number;
+  hasFallback?: boolean;
+}
+
 export interface DigitalHuman {
   id: string;
   name: string;
@@ -438,6 +446,38 @@ function splitLocalChunks(text: string): string[] {
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+export async function uploadModelFile(params: {
+  fileName: string;
+  fileBase64: string;
+  mimeType?: string;
+  fallbackUrl?: string;
+}): Promise<ModelUploadResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/models/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params)
+    });
+
+    if (!res.ok) {
+      const message = await res.text().catch(() => "模型上传失败");
+      throw new Error(message || "模型上传失败");
+    }
+
+    return res.json();
+  } catch (error) {
+    if (!canUseLocalFallback() || !params.fallbackUrl) throw error;
+    activateLocalFallback();
+    return {
+      modelUrl: params.fallbackUrl,
+      fileName: params.fileName,
+      mimeType: params.mimeType,
+      size: 0,
+      hasFallback: true
+    };
+  }
 }
 
 async function sendLocalMessageStream(payload: ChatRequest, handlers: ChatStreamEvents): Promise<StreamDoneResponse> {

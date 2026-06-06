@@ -14,7 +14,8 @@ import {
   resolveMediaUrl,
   sendMessage,
   sendMessageStream,
-  transcribeSpeech
+  transcribeSpeech,
+  uploadModelFile
 } from "../services/api";
 import { Avatar } from "./Avatar";
 
@@ -152,8 +153,15 @@ interface ApiHistoryMessage {
 }
 
 async function blobToBase64(blob: Blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  return btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function selectRecorderMimeType(): string | undefined {
@@ -204,6 +212,7 @@ export function ChatPanel({
   const [mediaRecorderSupported, setMediaRecorderSupported] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isModelUploading, setIsModelUploading] = useState(false);
   const [speechError, setSpeechError] = useState("");
   const [use3D, setUse3D] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -682,7 +691,7 @@ export function ChatPanel({
     }
   };
 
-  const handleModelFile = (fileList: FileList | null) => {
+  const handleModelFile = async (fileList: FileList | null) => {
     const file = fileList?.[0];
     if (!file) return;
     const isModelFile =
@@ -698,13 +707,30 @@ export function ChatPanel({
 
     const objectUrl = URL.createObjectURL(file);
     modelObjectUrlsRef.current.push(objectUrl);
-    setSpeechError("");
     setForm((prev) => ({ ...prev, modelUrl: objectUrl }));
+    setIsModelUploading(true);
+    setSpeechError("模型已进入本地预览，正在尝试上传到后端...");
+
+    try {
+      const fileBase64 = await blobToBase64(file);
+      const uploaded = await uploadModelFile({
+        fileName: file.name,
+        fileBase64,
+        mimeType: file.type || undefined,
+        fallbackUrl: objectUrl
+      });
+      setForm((prev) => ({ ...prev, modelUrl: uploaded.modelUrl }));
+      setSpeechError(uploaded.hasFallback ? "静态模式已使用本地模型预览；刷新页面后请重新上传。" : "模型已上传，可创建持久化 3D 数字人。");
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : "模型上传失败，已保留本地预览");
+    } finally {
+      setIsModelUploading(false);
+    }
   };
 
   const create = async (evt: FormEvent) => {
     evt.preventDefault();
-    if (isLoading) return;
+    if (isLoading || isModelUploading) return;
 
     const emotionProfile = parseEmotionProfile(form.emotionProfile);
     const avatarVideoProfile = parseEmotionProfile(form.avatarVideoProfile);
@@ -942,7 +968,9 @@ export function ChatPanel({
             onChange={(e) => setForm((prev) => ({ ...prev, avatarVideoProfile: e.target.value }))}
             placeholder={`情绪视频（可选，avatarType=video时生效）示例：{ "happy": "${assetPlaceholderBase}/videos/happy.mp4", "neutral": "https://.../neutral.mp4" }`}
           />
-          <button type="submit">创建</button>
+          <button type="submit" disabled={isModelUploading}>
+            {isModelUploading ? "上传模型中..." : "创建"}
+          </button>
         </form>
 
         <Avatar

@@ -25,13 +25,15 @@ const HOST = process.env.HOST;
 const WORKSPACE_ROOT = path.basename(process.cwd()) === "server" ? path.resolve(process.cwd(), "..") : process.cwd();
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "30mb" }));
 
 const DATA_DIR = path.join(WORKSPACE_ROOT, "server", "src", "data");
 const CUSTOM_FILE = path.join(DATA_DIR, "custom-humans.json");
 const AUDIO_DIR = path.join(WORKSPACE_ROOT, "server", "data", "audio");
+const MODEL_DIR = path.join(WORKSPACE_ROOT, "server", "data", "models");
 const STATIC_ASSETS_DIR = path.join(WORKSPACE_ROOT, "web", "public", "assets");
 const WEB_APP_URL = process.env.WEB_APP_URL?.trim() || "http://127.0.0.1:5173";
+const MAX_MODEL_BYTES = 25 * 1024 * 1024;
 
 async function getCharacters(): Promise<DigitalHumanConfig[]> {
   const base = await fs.readFile(path.join(DATA_DIR, "digital-humans.json"), "utf8");
@@ -75,6 +77,20 @@ async function deleteCustomHumanById(characterId: string): Promise<boolean> {
 
   await writeCustomHumans(next);
   return true;
+}
+
+async function deleteModelFileByName(fileName: string): Promise<boolean> {
+  const safeName = path.basename(String(fileName || "").trim());
+  if (!safeName || safeName === "." || safeName === "..") {
+    return false;
+  }
+
+  try {
+    await fs.unlink(path.join(MODEL_DIR, safeName));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeHistory(history?: ChatMessage[]): ChatMessage[] {
@@ -124,6 +140,37 @@ function normalizeAvatarType(raw: unknown): AvatarRenderMode {
   return raw === "video" ? "video" : "image";
 }
 
+function sanitizeModelFileName(rawName: unknown): string {
+  const baseName = path.basename(String(rawName || "model.glb")).trim() || "model.glb";
+  const ext = path.extname(baseName).toLowerCase();
+  if (ext !== ".glb" && ext !== ".gltf") {
+    throw new Error("仅支持 .glb 或 .gltf 模型文件");
+  }
+
+  const stem = baseName
+    .slice(0, -ext.length)
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "model";
+  return `${stem}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}${ext}`;
+}
+
+function decodeBase64Payload(raw: unknown): Buffer {
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new Error("fileBase64 为必填项");
+  }
+
+  const normalized = raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw;
+  const buffer = Buffer.from(normalized, "base64");
+  if (!buffer.length) {
+    throw new Error("模型文件为空");
+  }
+  if (buffer.byteLength > MAX_MODEL_BYTES) {
+    throw new Error("模型文件不能超过 25MB");
+  }
+  return buffer;
+}
+
 function resolveCharacter(characters: DigitalHumanConfig[], selectedId?: string): DigitalHumanConfig | null {
   if (selectedId) {
     return characters.find((c) => c.id === selectedId) ?? null;
@@ -139,6 +186,40 @@ function writeSse(res: Response, event: string, payload: unknown): void {
 app.get("/api/digital-humans", async (_req, res) => {
   const humans = await getCharacters();
   res.json({ humans });
+});
+
+app.post("/api/models/upload", async (req, res) => {
+  try {
+    const { fileName, fileBase64, mimeType } = (req.body || {}) as {
+      fileName?: unknown;
+      fileBase64?: unknown;
+      mimeType?: unknown;
+    };
+    const safeName = sanitizeModelFileName(fileName);
+    const buffer = decodeBase64Payload(fileBase64);
+    const modelUrl = `/models/${safeName}`;
+
+    await fs.mkdir(MODEL_DIR, { recursive: true });
+    await fs.writeFile(path.join(MODEL_DIR, safeName), buffer);
+    res.status(201).json({
+      modelUrl,
+      fileName: safeName,
+      mimeType: typeof mimeType === "string" && mimeType.trim() ? mimeType.trim() : undefined,
+      size: buffer.byteLength
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "模型上传失败";
+    res.status(400).json({ error: message });
+  }
+});
+
+app.delete("/api/models/:fileName", async (req, res) => {
+  const fileName = String(req.params.fileName || "").trim();
+  const deleted = await deleteModelFileByName(fileName);
+  if (!deleted) {
+    return res.status(404).json({ error: "model file not found" });
+  }
+  res.json({ ok: true });
 });
 
 app.post("/api/digital-humans", async (req, res) => {
@@ -385,6 +466,7 @@ app.delete("/api/digital-humans/:id", async (req, res) => {
 });
 
 app.use("/audio", express.static(AUDIO_DIR));
+app.use("/models", express.static(MODEL_DIR));
 app.use("/assets", express.static(STATIC_ASSETS_DIR));
 
 app.get("/healthz", (_req, res) => {

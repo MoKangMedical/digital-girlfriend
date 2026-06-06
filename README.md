@@ -250,6 +250,33 @@ npm run verify:digital-human-loop
 - `personalityTagline`：补充角色人设偏好
 - `relationshipMode`：关系风格，可填 `sweet`、`flirty`、`playful`、`mature`
 
+### `POST /api/models/upload`
+
+上传 GLB/GLTF 模型文件（JSON base64），服务端会保存到 `server/data/models` 并返回可访问的 `/models/...` 地址：
+
+```json
+{
+  "fileName": "lina.glb",
+  "fileBase64": "base64模型文件内容",
+  "mimeType": "model/gltf-binary"
+}
+```
+
+返回示例：
+
+```json
+{
+  "modelUrl": "/models/lina-mqxyz-abc123.glb",
+  "fileName": "lina-mqxyz-abc123.glb",
+  "mimeType": "model/gltf-binary",
+  "size": 123456
+}
+```
+
+说明：
+- 支持 `.glb` / `.gltf`，单文件上限 25MB。
+- Web 创建页选择本地 GLB/GLTF 文件时，会优先上传到该接口；静态 Pages 无后端时会自动保留本地临时预览。
+
 ### `DELETE /api/digital-humans/:id`
 删除自定义数字人（仅移除 `custom-humans.json` 中用户创建项），示例：
 

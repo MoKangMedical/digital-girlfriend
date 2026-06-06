@@ -71,6 +71,60 @@ async function resolveActiveBase() {
   return base;
 }
 
+function makeTinyGlbBase64() {
+  const json = JSON.stringify({ asset: { version: "2.0", generator: "digital-girlfriend-verify" } });
+  const paddedJson = json.padEnd(Math.ceil(json.length / 4) * 4, " ");
+  const jsonBytes = new TextEncoder().encode(paddedJson);
+  const totalLength = 12 + 8 + jsonBytes.length;
+  const buffer = new ArrayBuffer(totalLength);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, totalLength, true);
+  view.setUint32(12, jsonBytes.length, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  bytes.set(jsonBytes, 20);
+  return Buffer.from(bytes).toString("base64");
+}
+
+async function uploadVerifyModel(apiBase) {
+  const { data } = await requestWithCandidates("/api/models/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fileName: `verify-model-${Date.now()}.glb`,
+      fileBase64: makeTinyGlbBase64(),
+      mimeType: "model/gltf-binary"
+    })
+  }, apiBase);
+
+  if (!data?.modelUrl || !data?.fileName || typeof data.size !== "number" || data.size <= 0) {
+    throw new Error(`模型上传返回异常: ${JSON.stringify(data)}`);
+  }
+
+  const fetchRes = await fetch(`${apiBase}${data.modelUrl}`);
+  if (!fetchRes.ok) {
+    throw new Error(`上传模型静态访问失败：${fetchRes.status}`);
+  }
+
+  console.log("✓ 模型上传并可静态访问", data.modelUrl);
+  return data;
+}
+
+async function cleanupVerifyModel(apiBase, fileName) {
+  if (!fileName) return;
+  const res = await fetch(`${apiBase}/api/models/${encodeURIComponent(fileName)}`, {
+    method: "DELETE"
+  });
+  if (res.ok) {
+    console.log("✓ 模型文件清理成功");
+  } else {
+    console.log(`⚠️ 模型文件清理失败，状态码 ${res.status}`);
+  }
+}
+
 async function readStreamEventText(response) {
   const reader = response.body?.getReader();
   if (!reader) {
@@ -118,67 +172,81 @@ async function readStreamEventText(response) {
 
 async function main() {
   const apiBase = await resolveActiveBase();
+  const uploadedModel = await uploadVerifyModel(apiBase);
+  let characterId = "";
+  let sessionId = "";
 
-  const createdResult = await requestWithCandidates("/api/digital-humans", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: `verify-loop-${Date.now()}`,
-      description: "用于闭环验收",
-      avatarUrl: "/assets/avatars/lina.svg",
-      voiceProvider: "local",
-      voice: "nova",
-      defaultMood: "neutral",
-      relationshipMode: "sweet"
-    })
-  }, apiBase);
+  try {
+    const createdResult = await requestWithCandidates("/api/digital-humans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `verify-loop-${Date.now()}`,
+        description: "用于闭环验收",
+        avatarUrl: "/assets/avatars/lina.svg",
+        modelUrl: uploadedModel.modelUrl,
+        voiceProvider: "local",
+        voice: "nova",
+        defaultMood: "neutral",
+        relationshipMode: "sweet"
+      })
+    }, apiBase);
 
-  const created = createdResult?.data;
+    const created = createdResult?.data;
 
-  const characterId = created?.human?.id;
-  if (!characterId) {
-    throw new Error("创建数字人未返回 human.id");
+    characterId = created?.human?.id || "";
+    if (!characterId) {
+      throw new Error("创建数字人未返回 human.id");
+    }
+    if (created?.human?.modelUrl !== uploadedModel.modelUrl) {
+      throw new Error("创建数字人未保留 modelUrl");
+    }
+    console.log("✓ 数字人创建成功", characterId);
+
+    sessionId = `verify-loop-${Date.now()}`;
+    const streamRes = await fetch(`${apiBase}/api/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "你好，今天天气很好，聊会儿天吧",
+        characterId,
+        sessionId,
+        history: []
+      })
+    });
+    if (!streamRes.ok) {
+      throw new Error(`/api/chat/stream 返回失败：${streamRes.status}`);
+    }
+    const parsed = await readStreamEventText(streamRes);
+    if (!parsed.hasDone) {
+      throw new Error("流式返回未收到 done 事件");
+    }
+    if (!parsed.hasEmotion) {
+      throw new Error("流式返回未收到 emotion 事件");
+    }
+    console.log("✓ 流式返回包含 done + emotion");
+
+    console.log("闭环验收通过");
+  } finally {
+    if (sessionId) {
+      await requestJSON(apiBase, `/api/session/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE"
+      }).then(() => console.log("✓ 会话清理成功")).catch(() => {});
+    }
+
+    if (characterId) {
+      const delRes = await fetch(`${apiBase}/api/digital-humans/${encodeURIComponent(characterId)}`, {
+        method: "DELETE"
+      });
+      if (!delRes.ok) {
+        console.log(`⚠️ 清理数字人失败，状态码 ${delRes.status}`);
+      } else {
+        console.log("✓ 数字人清理成功");
+      }
+    }
+
+    await cleanupVerifyModel(apiBase, uploadedModel.fileName);
   }
-  console.log("✓ 数字人创建成功", characterId);
-
-  const sessionId = `verify-loop-${Date.now()}`;
-  const streamRes = await fetch(`${apiBase}/api/chat/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: "你好，今天天气很好，聊会儿天吧",
-      characterId,
-      sessionId,
-      history: []
-    })
-  });
-  if (!streamRes.ok) {
-    throw new Error(`/api/chat/stream 返回失败：${streamRes.status}`);
-  }
-  const parsed = await readStreamEventText(streamRes);
-  if (!parsed.hasDone) {
-    throw new Error("流式返回未收到 done 事件");
-  }
-  if (!parsed.hasEmotion) {
-    throw new Error("流式返回未收到 emotion 事件");
-  }
-  console.log("✓ 流式返回包含 done + emotion");
-
-  await requestJSON(apiBase, `/api/session/${encodeURIComponent(sessionId)}`, {
-    method: "DELETE"
-  });
-  console.log("✓ 会话清理成功");
-
-  const delRes = await fetch(`${apiBase}/api/digital-humans/${encodeURIComponent(characterId)}`, {
-    method: "DELETE"
-  });
-  if (!delRes.ok) {
-    console.log(`⚠️ 清理数字人失败，状态码 ${delRes.status}`);
-  } else {
-    console.log("✓ 数字人清理成功");
-  }
-
-  console.log("闭环验收通过");
 }
 
 main().catch((err) => {
