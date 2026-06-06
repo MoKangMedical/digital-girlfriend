@@ -13,6 +13,7 @@
 - Web 端支持语音输入（麦克风）与语音回放联动
 - 数字人创建与切换（头像/默认情绪同步显示）
 - Web 端支持 GLB/GLTF 3D 模型地址与本地上传，聊天情绪会继续驱动 3D 外层动作
+- 小程序端创建数字人也会保留 `modelUrl`，并提供 3D/2D 低性能回退状态提示
 - Web / 小程序 / iOS 的同一会话与数字人配置使用同一套 API
 - 支持数字人实时表情图/视频映射（`avatarType=video`）
 
@@ -358,6 +359,7 @@ SSE 流式接口，返回事件：
 - 可选 `emotionProfile`（JSON 映射）为不同情绪配置独立图片，服务端和端侧将按实时情绪事件切换形象；
 - 新增 `avatarVideoProfile` 后可在 `avatarType=video` 下按情绪播放视频，替代静态图层。
 - Web 端可在创建数字人时填写 `modelUrl` 或上传本地 GLB/GLTF 模型；3D/2D 开关开启 3D 时会优先加载该模型，聊天情绪会复用同一套 3D 外层动作。
+- 小程序端可在创建数字人时填写 `modelUrl` 并保留到同一套数字人配置；当前小程序形象仍以 2D 表情/视频预览为主，页面会显示 3D/2D 回退状态，方便低性能设备一键切换语义状态。
 - 项目已内置 `/assets/expressions/{emotion}.svg`（happy / sad / surprise / wink / neutral / angry / love）用于默认数字人的情绪图形化显示。
 
 可在 `web/src/components/Avatar.tsx` 与 `web/src/components/ChatPanel.tsx`、`server/src/services/tts.ts`
@@ -383,6 +385,7 @@ SSE 流式接口，返回事件：
    - 文字返回打字机式展示（每段文字同步更新情绪）
    - 形象展示（头像 + 实时表情）
    - `avatarType` 与 `avatarVideoProfile` 创建参数
+   - `modelUrl` 创建参数与 3D/2D 回退状态提示
    - 创建数字人时可填写 `emotionProfile`（JSON），例如为 `happy`/`sad`/`love` 指定图片地址
    - 语音自动播放
 4. 配置小程序域名白名单：`https://<你的域名>`。

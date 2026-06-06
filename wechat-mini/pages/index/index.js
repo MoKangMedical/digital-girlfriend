@@ -2,6 +2,7 @@ const STORAGE_KEY_SESSION = "dg-mini-session-id";
 const STORAGE_KEY_CHARACTER = "dg-mini-character-id";
 const STORAGE_KEY_LOCAL_HUMANS = "dg-mini-local-digital-humans-v1";
 const STORAGE_KEY_LOCAL_CONTEXT = "dg-mini-local-chat-context-v1";
+const STORAGE_KEY_AVATAR_RENDER_MODE = "dg-mini-avatar-render-mode";
 
 const expressionMap = {
   happy: "(^_^)",
@@ -30,7 +31,10 @@ const relationshipLevelLabel = {
   intimate: "亲密"
 };
 
+const emotionModes = ["neutral", "happy", "sad", "surprise", "wink", "angry", "love"];
 const relationshipModes = ["sweet", "flirty", "playful", "mature"];
+const voiceProviders = ["openai", "azure", "local"];
+const avatarTypes = ["image", "video"];
 
 const BUILT_IN_HUMANS = [
   {
@@ -38,6 +42,7 @@ const BUILT_IN_HUMANS = [
     name: "Lina",
     description: "默认数字人。温柔、开朗，默认可爱的笑容",
     avatarUrl: "/assets/avatars/lina.svg",
+    modelUrl: "",
     defaultMood: "happy",
     personalityTagline: "温柔可爱，既能认真陪伴，也会轻松撒娇。",
     relationshipMode: "sweet",
@@ -58,6 +63,7 @@ const BUILT_IN_HUMANS = [
     name: "Moon",
     description: "成熟、细腻，偏感性表达",
     avatarUrl: "/assets/avatars/moon.svg",
+    modelUrl: "",
     defaultMood: "wink",
     personalityTagline: "成熟感性，善于用共情语言回应并引导对方放松表达。",
     relationshipMode: "playful",
@@ -161,6 +167,30 @@ function resolveApiAsset(raw) {
   const apiBase = getApiBase();
   if (!apiBase) return trimmed;
   return trimmed.startsWith("/") ? `${apiBase}${trimmed}` : `${apiBase}/${trimmed}`;
+}
+
+function resolveModelUrl(raw) {
+  return resolveApiAsset(raw);
+}
+
+function resolveAvatarRenderStatus(character, mode) {
+  if (mode === "2d") {
+    return "2D头像/表情模式，适合低性能设备";
+  }
+
+  if (String(character?.modelUrl || "").trim()) {
+    return "3D模型已配置，小程序当前使用2D表情预览回退";
+  }
+
+  return "3D模型未配置，显示2D表情";
+}
+
+function readAvatarRenderMode() {
+  try {
+    return wx.getStorageSync(STORAGE_KEY_AVATAR_RENDER_MODE) === "2d" ? "2d" : "3d";
+  } catch {
+    return "3d";
+  }
 }
 
 const localMoodKeywords = {
@@ -564,6 +594,9 @@ Page({
     characterId: "lina",
     characterName: "Lina",
     characterAvatar: "/assets/avatars/lina.svg",
+    characterModelUrl: "",
+    avatarRenderMode: "3d",
+    avatarRenderStatus: "3D模型未配置，显示2D表情",
     conversationRelationshipMode: "sweet",
     speaking: false,
     lipPhase: 0,
@@ -571,6 +604,7 @@ Page({
       name: "",
       description: "",
       avatarUrl: "/assets/avatars/lina.svg",
+      modelUrl: "",
       voice: "nova",
       voiceProvider: "openai",
       defaultMood: "neutral",
@@ -604,9 +638,11 @@ Page({
     }
 
     const cachedCharacter = wx.getStorageSync(STORAGE_KEY_CHARACTER);
+    const cachedAvatarRenderMode = readAvatarRenderMode();
     this.setData({
       sessionId,
-      characterId: cachedCharacter || "lina"
+      characterId: cachedCharacter || "lina",
+      avatarRenderMode: cachedAvatarRenderMode
     });
     this._recorderManager = wx.getRecorderManager();
     this._fileSystemManager = wx.getFileSystemManager();
@@ -749,6 +785,7 @@ Page({
     }
     const selected = safeList[pickerIndex] || safeList[0];
     const selectedId = selected?.id || "lina";
+    const avatarRenderMode = this.data.avatarRenderMode || readAvatarRenderMode();
 
     this.setData({
       characters: safeList,
@@ -757,6 +794,9 @@ Page({
       characterId: selectedId,
       characterName: selected?.name || selected?.id || "Lina",
       characterAvatar: resolveApiAsset(selected?.avatarUrl || "/assets/avatars/lina.svg"),
+      characterModelUrl: resolveModelUrl(selected?.modelUrl || ""),
+      avatarRenderMode,
+      avatarRenderStatus: resolveAvatarRenderStatus(selected, avatarRenderMode),
       conversationRelationshipMode: selected?.relationshipMode || "sweet"
     });
     wx.setStorageSync(STORAGE_KEY_CHARACTER, selectedId);
@@ -797,9 +837,21 @@ Page({
       characterId: selected.id,
       characterName: selected.name || selected.id,
       characterAvatar: resolveApiAsset(selected.avatarUrl || "/assets/avatars/lina.svg"),
+      characterModelUrl: resolveModelUrl(selected.modelUrl || ""),
+      avatarRenderStatus: resolveAvatarRenderStatus(selected, this.data.avatarRenderMode),
       conversationRelationshipMode: selected.relationshipMode || "sweet"
     });
     this.applyEmotion(selected.defaultMood || "neutral", selected);
+  },
+
+  onToggleAvatarRenderMode() {
+    const nextMode = this.data.avatarRenderMode === "3d" ? "2d" : "3d";
+    const current = getActiveCharacter(this);
+    wx.setStorageSync(STORAGE_KEY_AVATAR_RENDER_MODE, nextMode);
+    this.setData({
+      avatarRenderMode: nextMode,
+      avatarRenderStatus: resolveAvatarRenderStatus(current, nextMode)
+    });
   },
 
   _removeLocalHuman(id) {
@@ -1221,10 +1273,10 @@ Page({
     this.setData({ lipPhase: 0 });
   },
 
-      onCreateInput(e) {
-        const key = e.currentTarget.dataset.field;
-        const value = e.detail.value;
-        if (!key) return;
+  onCreateInput(e) {
+    const key = e.currentTarget.dataset.field;
+    const value = e.detail.value;
+    if (!key) return;
 
     this.setData({
       newHuman: { ...this.data.newHuman, [key]: value }
@@ -1232,32 +1284,34 @@ Page({
   },
 
   onCreateModeChange(e) {
+    const defaultMood = emotionModes[Number(e.detail.value)] || "neutral";
     this.setData({
-      createMood: e.detail.value,
-      newHuman: { ...this.data.newHuman, defaultMood: e.detail.value }
+      createMood: defaultMood,
+      newHuman: { ...this.data.newHuman, defaultMood }
     });
   },
 
   onCreateRelationshipModeChange(e) {
+    const relationshipMode = relationshipModes[Number(e.detail.value)] || "sweet";
     this.setData({
-      newHuman: { ...this.data.newHuman, relationshipMode: relationshipModes[e.detail.value] || "sweet" }
+      newHuman: { ...this.data.newHuman, relationshipMode }
     });
   },
 
   onConversationRelationshipModeChange(e) {
-    const selected = relationshipModes[e.detail.value] || "sweet";
+    const selected = relationshipModes[Number(e.detail.value)] || "sweet";
     this.setData({ conversationRelationshipMode: selected });
   },
 
   onCreateVoiceProviderChange(e) {
-    const voiceProvider = e.detail.value;
+    const voiceProvider = voiceProviders[Number(e.detail.value)] || "openai";
     this.setData({
       newHuman: { ...this.data.newHuman, voiceProvider }
     });
   },
 
   onAvatarTypeChange(e) {
-    const avatarType = e.detail.value === "video" ? "video" : "image";
+    const avatarType = avatarTypes[Number(e.detail.value)] || "image";
     this.setData({
       newHuman: { ...this.data.newHuman, avatarType }
     });
@@ -1276,12 +1330,15 @@ Page({
       characterId: created.id,
       characterName: created.name || created.id,
       characterAvatar: resolveApiAsset(created.avatarUrl || "/assets/avatars/lina.svg"),
+      characterModelUrl: resolveModelUrl(created.modelUrl || ""),
+      avatarRenderStatus: resolveAvatarRenderStatus(created, this.data.avatarRenderMode),
       conversationRelationshipMode: created.relationshipMode || "sweet",
       creating: false,
       newHuman: {
         name: "",
         description: "",
         avatarUrl: "/assets/avatars/lina.svg",
+        modelUrl: "",
         voiceProvider: "openai",
         voice: "nova",
         defaultMood: "neutral",
@@ -1303,6 +1360,7 @@ Page({
       name: String(payload.name || "").trim(),
       description: String(payload.description || "").trim(),
       avatarUrl: String(payload.avatarUrl || "/assets/avatars/lina.svg").trim(),
+      modelUrl: String(payload.modelUrl || "").trim() || undefined,
       avatarType: payload.avatarType === "video" ? "video" : "image",
       emotionProfile: emotionProfile || cloneJson(BUILT_IN_HUMANS[0].emotionProfile),
       avatarVideoProfile,
@@ -1352,6 +1410,7 @@ Page({
       header: { "Content-Type": "application/json" },
       data: {
         ...payload,
+        modelUrl: String(payload.modelUrl || "").trim() || undefined,
         avatarType: payload.avatarType,
         personalityTagline: String(payload.personalityTagline || "").trim(),
         relationshipMode: payload.relationshipMode || "sweet",

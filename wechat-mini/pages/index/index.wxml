@@ -47,7 +47,19 @@
       </block>
     </view>
     <view class="label">{{emotionLabel}}</view>
-  <view class="relation-label">
+    <view class="render-row">
+      <button
+        class="render-toggle"
+        type="default"
+        size="mini"
+        bindtap="onToggleAvatarRenderMode"
+      >
+        {{avatarRenderMode === '3d' ? '3D' : '2D'}}
+      </button>
+      <view class="render-status">{{avatarRenderStatus}}</view>
+    </view>
+    <view wx:if="{{characterModelUrl}}" class="model-url">模型：{{characterModelUrl}}</view>
+    <view class="relation-label">
       关系：{{relationshipAffinityLabel || relationshipAffinity || "待启动"}}（{{relationshipTurns || 0}}）
     </view>
     <view class="relation-label">
@@ -107,6 +119,12 @@
       data-field="avatarUrl"
       bindinput="onCreateInput"
       placeholder="头像地址（http 或本地静态资源）"
+    />
+    <input
+      value="{{newHuman.modelUrl}}"
+      data-field="modelUrl"
+      bindinput="onCreateInput"
+      placeholder="3D模型地址（GLB/GLTF，可选）"
     />
     <input value="{{newHuman.voice}}" data-field="voice" bindinput="onCreateInput" placeholder="声音 ID（nova/alloy）" />
     <picker
