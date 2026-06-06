@@ -15,12 +15,18 @@ body {
 }
 
 .container {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 1080px;
   margin: 0 auto;
   padding: 24px;
 }
 
 .topbar {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -55,6 +61,13 @@ body {
 .chat-shell {
   display: grid;
   gap: 14px;
+}
+
+.chat-shell > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .landing-shell {
@@ -191,6 +204,8 @@ body {
 }
 
 .layout {
+  box-sizing: border-box;
+  width: 100%;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 20px;
