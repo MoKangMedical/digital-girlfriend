@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Box, Image as ImageIcon, Mic, MicOff, Send } from "lucide-react";
+import { Box, Download, Image as ImageIcon, Mic, MicOff, Send, Upload } from "lucide-react";
 import {
   ChatContext,
   ChatMessageRequest,
@@ -24,6 +24,11 @@ const defaultAvatarUrl = `${PUBLIC_ASSET_BASE}assets/avatars/lina.svg`;
 const assetPlaceholderBase = `${PUBLIC_ASSET_BASE}assets`;
 const AVATAR_MODE_STORAGE_KEY = "dg-avatar-render-mode";
 const CHAT_STATE_STORAGE_PREFIX = "dg-chat-state-v1";
+const LOCAL_HUMANS_STORAGE_KEY = "dg-local-digital-humans-v1";
+const LOCAL_CONTEXT_STORAGE_KEY = "dg-local-chat-context-v1";
+const SESSION_STORAGE_KEY = "dg-session-id";
+const SELECTED_CHARACTER_STORAGE_KEY = "dg-selected-character-id";
+const EXPORT_SCHEMA = "digital-girlfriend-local-archive";
 const MAX_STORED_MESSAGES = 80;
 
 interface Bubble {
@@ -64,6 +69,18 @@ interface BrowserSpeechRecognition {
 }
 
 type BrowserSpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+
+interface LocalArchivePayload {
+  schema: typeof EXPORT_SCHEMA;
+  version: 1;
+  exportedAt: string;
+  sessionId: string;
+  selectedCharacterId: string;
+  avatarRenderMode?: "2d" | "3d";
+  localHumans: DigitalHuman[];
+  localContexts: Record<string, ChatContext>;
+  chatStates: Array<{ key: string; value: unknown }>;
+}
 
 interface State {
   messages: Bubble[];
@@ -140,6 +157,24 @@ function parseEmotionProfile(raw: string): EmotionProfile | undefined {
   } catch {
     return undefined;
   }
+}
+
+function normalizeEmotionProfileObject(raw: unknown): EmotionProfile | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const result: EmotionProfile = {};
+  (Object.keys(raw) as Array<Emotion>).forEach((emotion) => {
+    if (isEmotion(emotion)) {
+      const value = String((raw as Record<string, unknown>)[emotion] || "").trim();
+      if (value) {
+        result[emotion] = value;
+      }
+    }
+  });
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function getChatStateStorageKey(sessionId: string, characterId: string): string {
@@ -266,6 +301,157 @@ function removeStoredChatStatesForCharacter(characterId: string): void {
   }
 }
 
+function readLocalStorageJson<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeImportedHumans(raw: unknown): DigitalHuman[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const value = item as Partial<DigitalHuman>;
+    const id = String(value.id || "").trim();
+    const name = String(value.name || "").trim();
+    if (!id.startsWith("custom-") || !name) return [];
+
+    const voiceProfile = value.voiceProfile && typeof value.voiceProfile === "object" ? value.voiceProfile : undefined;
+    const provider = voiceProfile?.provider === "openai" || voiceProfile?.provider === "azure" || voiceProfile?.provider === "local"
+      ? voiceProfile.provider
+      : "local";
+
+    return [{
+      id,
+      name,
+      description: String(value.description || "导入的数字人").trim(),
+      avatarUrl: String(value.avatarUrl || defaultAvatarUrl).trim(),
+      modelUrl: String(value.modelUrl || "").trim() || undefined,
+      avatarType: value.avatarType === "video" ? "video" : "image",
+      emotionProfile: normalizeEmotionProfileObject(value.emotionProfile),
+      avatarVideoProfile: normalizeEmotionProfileObject(value.avatarVideoProfile),
+      personalityTagline: String(value.personalityTagline || "").trim() || undefined,
+      relationshipMode: isRelationshipMode(value.relationshipMode) ? value.relationshipMode : "sweet",
+      voiceProfile: {
+        provider,
+        voice: String(voiceProfile?.voice || "browser-zh-CN").trim()
+      },
+      defaultMood: isEmotion(value.defaultMood) ? value.defaultMood : "neutral"
+    }];
+  });
+}
+
+function normalizeImportedChatState(raw: unknown): unknown | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Partial<State>;
+  const messages = normalizeStoredMessages(value.messages);
+  if (!messages.length) return null;
+  const context = normalizeStoredContext(value.context);
+
+  return {
+    version: 1,
+    messages,
+    emotion: isEmotion(value.emotion) ? value.emotion : context?.lastEmotion || "neutral",
+    relationshipMode: isRelationshipMode(value.relationshipMode)
+      ? value.relationshipMode
+      : context?.activeRelationshipMode || "sweet",
+    context,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizeImportedContexts(raw: unknown): Record<string, ChatContext> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: Record<string, ChatContext> = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    const context = normalizeStoredContext(value);
+    if (context) {
+      result[String(key)] = context;
+    }
+  });
+  return result;
+}
+
+function buildLocalArchive(sessionId: string, selectedCharacterId: string, state: State): LocalArchivePayload {
+  writeStoredChatState(sessionId, state);
+  const chatStates: LocalArchivePayload["chatStates"] = [];
+
+  if (typeof window !== "undefined") {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(`${CHAT_STATE_STORAGE_PREFIX}:`)) continue;
+      const value = readLocalStorageJson<unknown>(key, null);
+      const normalized = normalizeImportedChatState(value);
+      if (normalized) {
+        chatStates.push({ key, value: normalized });
+      }
+    }
+  }
+
+  const avatarRenderMode = typeof window !== "undefined" && window.localStorage.getItem(AVATAR_MODE_STORAGE_KEY) === "2d" ? "2d" : "3d";
+  return {
+    schema: EXPORT_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sessionId,
+    selectedCharacterId,
+    avatarRenderMode,
+    localHumans: normalizeImportedHumans(readLocalStorageJson<unknown>(LOCAL_HUMANS_STORAGE_KEY, [])),
+    localContexts: normalizeImportedContexts(readLocalStorageJson<unknown>(LOCAL_CONTEXT_STORAGE_KEY, {})),
+    chatStates
+  };
+}
+
+function importLocalArchive(payload: unknown): { humans: number; chats: number } {
+  if (typeof window === "undefined" || !payload || typeof payload !== "object") {
+    throw new Error("导入文件格式不正确");
+  }
+
+  const archive = payload as Partial<LocalArchivePayload>;
+  if (archive.schema !== EXPORT_SCHEMA || archive.version !== 1) {
+    throw new Error("不是数字女友本地记录文件");
+  }
+
+  const importedHumans = normalizeImportedHumans(archive.localHumans);
+  const existingHumans = normalizeImportedHumans(readLocalStorageJson<unknown>(LOCAL_HUMANS_STORAGE_KEY, []));
+  const humanMap = new Map(existingHumans.map((human) => [human.id, human]));
+  importedHumans.forEach((human) => humanMap.set(human.id, human));
+  window.localStorage.setItem(LOCAL_HUMANS_STORAGE_KEY, JSON.stringify(Array.from(humanMap.values())));
+
+  const importedContexts = normalizeImportedContexts(archive.localContexts);
+  const existingContexts = normalizeImportedContexts(readLocalStorageJson<unknown>(LOCAL_CONTEXT_STORAGE_KEY, {}));
+  window.localStorage.setItem(LOCAL_CONTEXT_STORAGE_KEY, JSON.stringify({ ...existingContexts, ...importedContexts }));
+
+  let importedChatCount = 0;
+  if (Array.isArray(archive.chatStates)) {
+    archive.chatStates.forEach((entry) => {
+      const key = String(entry?.key || "");
+      if (!key.startsWith(`${CHAT_STATE_STORAGE_PREFIX}:`)) return;
+      const normalized = normalizeImportedChatState(entry.value);
+      if (!normalized) return;
+      window.localStorage.setItem(key, JSON.stringify(normalized));
+      importedChatCount += 1;
+    });
+  }
+
+  if (archive.sessionId) {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, String(archive.sessionId));
+  }
+  if (archive.selectedCharacterId) {
+    window.localStorage.setItem(SELECTED_CHARACTER_STORAGE_KEY, String(archive.selectedCharacterId));
+  }
+  if (archive.avatarRenderMode === "2d" || archive.avatarRenderMode === "3d") {
+    window.localStorage.setItem(AVATAR_MODE_STORAGE_KEY, archive.avatarRenderMode);
+  }
+
+  return { humans: importedHumans.length, chats: importedChatCount };
+}
+
 interface NewCharacterForm {
   name: string;
   description: string;
@@ -374,6 +560,7 @@ export function ChatPanel({
   const suppressClickAfterHoldRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const activeChatStorageKeyRef = useRef("");
+  const archiveInputRef = useRef<HTMLInputElement>(null);
 
   const activeCharacter = characters.find((item) => item.id === state.characterId) || initialCharacter || characters[0];
   const isCustomCharacter = (characterId: string) => characterId.startsWith("custom-");
@@ -981,6 +1168,44 @@ export function ChatPanel({
     toggleVoiceInput();
   };
 
+  const exportArchive = () => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const archive = buildLocalArchive(sessionId, state.characterId || selectedCharacterId || "lina", state);
+      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `digital-girlfriend-archive-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setSpeechError(`已导出 ${archive.localHumans.length} 个自定义数字人和 ${archive.chatStates.length} 组聊天记录。`);
+    } catch {
+      setSpeechError("导出失败，请稍后重试");
+    }
+  };
+
+  const importArchive = async (fileList: FileList | null) => {
+    const file = fileList?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const result = importLocalArchive(JSON.parse(raw));
+      setSpeechError(`已导入 ${result.humans} 个数字人和 ${result.chats} 组聊天记录，正在刷新...`);
+      window.setTimeout(() => window.location.reload(), 300);
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : "导入失败，请检查 JSON 文件");
+    } finally {
+      if (archiveInputRef.current) {
+        archiveInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="layout">
       <section className="left">
@@ -1138,6 +1363,26 @@ export function ChatPanel({
           <button type="button" onClick={resetConversation} disabled={isLoading}>
             清空对话
           </button>
+          <button type="button" onClick={exportArchive} disabled={isLoading} title="导出本地数字人和聊天记录">
+            <Download size={16} />
+            导出记录
+          </button>
+          <button
+            type="button"
+            onClick={() => archiveInputRef.current?.click()}
+            disabled={isLoading}
+            title="导入本地数字人和聊天记录"
+          >
+            <Upload size={16} />
+            导入记录
+          </button>
+          <input
+            ref={archiveInputRef}
+            className="archive-input"
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void importArchive(event.currentTarget.files)}
+          />
           <button
             type="button"
             onClick={toggleAvatarMode}
