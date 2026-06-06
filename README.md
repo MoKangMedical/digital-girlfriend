@@ -52,7 +52,7 @@ npm run dev
 2. 保证主分支推送到 `main`。
 3. Push 后 `.github/workflows/gh-pages.yml` 会自动执行：
    - `npm run build:web`（即 `npm run build --workspace @dg/web`）
-   - 部署 `web/dist` 到 `gh-pages` 分支。
+   - 自动上传构建产物并发布到 GitHub Pages（`workflow` 模式）。
 
 本地一键验证（按你要求）：
 
